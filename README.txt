@@ -39,7 +39,7 @@ Inside the IDB_PUSH tab you have several shortcuts:
  - Space goes to the address of the selected update (only if a single update is selected)
 
 
- s
+
 Known Issues
 ------------
 1. Can't connect to the backend server running zmq_forwarder.py: ZMQ currently doesn't support IPv6, and some hostname lookups return IPv6 by default; try to change the hostnames in ZMQ_PUB_CONNECTION_STRING and ZMQ_SUB_CONNECTION_STRING to the IPv4 addresses of the server.
@@ -51,7 +51,7 @@ Known Issues
 4. When you highligh registers an exception is thrown and printed to the console (but has no negative effects otherwise); this has something to do with the default implementation of IDP hooks.
 
 
-You can always open an issue at https://github.com/argussecurity/psida/issues
+You can always open an issue at https://github.com/argussecurity/psida/issues.
 
 
 Contributing
@@ -62,8 +62,30 @@ Bug fixes and feature pull requests are always welcome, but do review the "Futur
 
 Future Plans
 ------------
- - make zmq_forwarder alternative for *nix (or throw away ZeroMQ altogether)
+Note: these are not in order of importance!
 
+
+0. Solve the known issues
+
+1. Write a zmq_forwarder.py alternative for *nix (if we're still using ZeroMQ)
  
+2. Merge comments: when you merge you should add the old name (or the alternate name, if unmerged) of the function to the function comments; use repeated comments for this, unless you have regular comments (which override them)
+
+3. Add a Save/Open dialogue for pickle()/unpickle()
+
+4. Implement a runtime progress logger
+	- use the hooks in idb_push (factor them out)
+	- store all the hooked actions - this gets you all the pickleable changes really fast - which is important since pickle() can be really slow
+	- make it run automatically (via idapythonrc.py)
  
+5. Add ASLR support - store addresses relative to beginning of segments and offer the user to accept segment rebasing (only if this is actually relevant)
+
+6. Add support for pickling/tracking stack argument names (similar to idc.MakeLocal source code)
+
+7. Add support for pickling/tracking memory address types (word/dword/byte, string, offset, etc.)
+
+8. Add support for pickling/tracking function prototypes (see also "Put on your tinfo_t hat if you're my type" from DefCon 23)
+	- idc.GetTinfo(), idc.ApplyType(address, tuple as above)
+ 
+9. Implement a statistics-based stringer - use a large corpus of compiled binaries (with debug data) to deduce what kind of characters, and how much of them, predicts well if this is a string or not
 
