@@ -1,7 +1,6 @@
 import os
 import idaapi
 import common
-import zmq
 import traceback
 import json
 import time
@@ -11,11 +10,18 @@ import random
 
 from PyQt5 import QtGui, QtCore, QtWidgets
 
+try:
+    import zmq
+except ImportError:
+    print "WARNING: zmq not found, idb_push will not function properly"
+    zmq = None
+
 
 CONTEXT_MENU_ACTION_NAME = "idb_push:send_address"
 
-ZMQ_PUB_CONNECTION_STRING = r"tcp://argusbuild:5559"
-ZMQ_SUB_CONNECTION_STRING = r"tcp://argusbuild:5560"
+# connection strings for the backend (typically different ports in the same machine)
+ZMQ_PUB_CONNECTION_STRING = r"tcp://backend:5559"
+ZMQ_SUB_CONNECTION_STRING = r"tcp://backend:5560"
 
 ZMQ_TIMEOUT_MS = 100
 ZMQ_CONNECTIVITY_TEST_TIMEOUT = 1000
