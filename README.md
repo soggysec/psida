@@ -64,6 +64,7 @@ Future Plans
 ------------
 Note: these are not in order of importance!
 
+-1. Add a persistent configuration to idb_push(), so that you have to call configure() only once.
 
 0. Solve the known issues
 
