@@ -34,6 +34,8 @@ change it at run time).
 
 At this point PSIDA supports only IDA 6.9. It can be made to work on IDA 6.8 (and probably earlier versions), but it's tricky and requires (at least) a recompiled version of the IDAPython plugin that exposes the necessary functions.
 
+UPDATE: at this point it seems that there's an issue with IDAPython in IDA 6.95, we contacted HexRays and hope for swift resolution.
+
 
 
 Usage
