@@ -32,7 +32,7 @@ In order to use PSIDA you need to:
 change it at run time).
 
 
-At this point PSIDA supports only IDA 6.9. It can be made to work on IDA 6.8 (and probably earlier versions), but it's tricky and requires (at least) a recompiled version of the IDAPython plugin.
+At this point PSIDA supports only IDA 6.9. It can be made to work on IDA 6.8 (and probably earlier versions), but it's tricky and requires (at least) a recompiled version of the IDAPython plugin that exposes the necessary functions.
 
 
 
@@ -59,7 +59,7 @@ Known Issues
 4. When you highligh registers an exception is thrown and printed to the console (but has no negative effects otherwise); this has something to do with the default implementation of IDP hooks.
 
 
-You can always open an issue at https://github.com/argussecurity/psida/issues.
+You can always open an issue at https://bitbucket.org/argussecurity/psida/issues.
 
 
 Contributing
