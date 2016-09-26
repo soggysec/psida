@@ -1,6 +1,6 @@
 PSIDA
 =========
-### Python Scripts for IDA [[[by the Argus Research Team]]]
+### Python Scripts for IDA [by the Argus Research Team]
 
 PSIDA is a collection of useful Python scripts for IDA.
 At this point, PSIDA focuses on collaborative reverse engineering in two models:
@@ -15,16 +15,24 @@ Internally, idb_pickle is built on IDAPython, while idb_push additionally uses Z
 Installation
 ------------
 In order to use PSIDA you need to:
+
 0. Have a 32-bit Python for IDAPython.
+
 1. Copy common.py, idb_pickle.py and idb_push.py into your IDA 6.9/python/ folder.
+
 2. Either copy idapythonrc.py into "%APPDATA%\Hex-Rays\IDA Pro" or (if you already have an idapythonrc.py) add "from PyQt5 import QtGui, QtCore, QtWidgets" to it.
+
 3. If you plan on using idb_push you also need to
+
 	3.1. Install zmq ("pip install pyzmq" does the trick).
+
 	3.2. Install zmq_forwarder as a Windows service and start it (via services.msc); setting it as Automatic is probably a good idea.
-	3.3. Change the ZMQ_PUB_CONNECTION_STRING and ZMQ_SUB_CONNECTION_STRING in idb_push.py to use the hostname/IPv4 address of the machine that runs zmq_forwarder (you can also change it at run time).
+
+	3.3. Change the ZMQ_PUB_CONNECTION_STRING and ZMQ_SUB_CONNECTION_STRING in idb_push.py to use the hostname/IPv4 address of the machine that runs zmq_forwarder (you can also 
+change it at run time).
 
 
-At this point PSIDA supports only IDA 6.9. It can be made to work on IDA 6.8 (and probably earlier versions), but it's tricky and requires (at least) a recompiled version of the IDAPython plugin.
+At this point PSIDA supports only IDA 6.9. It can be made to work on IDA 6.8 (and probably earlier versions), but it's tricky and requires (at least) a recompiled version of the IDAPython plugin that exposes the necessary functions.
 
 
 
@@ -51,7 +59,7 @@ Known Issues
 4. When you highligh registers an exception is thrown and printed to the console (but has no negative effects otherwise); this has something to do with the default implementation of IDP hooks.
 
 
-You can always open an issue at https://github.com/argussecurity/psida/issues.
+You can always open an issue at https://bitbucket.org/argussecurity/psida/issues.
 
 
 Contributing
@@ -89,4 +97,3 @@ Note: these are not in order of importance!
 	- idc.GetTinfo(), idc.ApplyType(address, tuple as above)
  
 9. Implement a statistics-based stringer - use a large corpus of compiled binaries (with debug data) to deduce what kind of characters, and how much of them, predicts well if this is a string or not
-
