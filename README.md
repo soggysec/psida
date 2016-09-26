@@ -89,4 +89,3 @@ Note: these are not in order of importance!
 	- idc.GetTinfo(), idc.ApplyType(address, tuple as above)
  
 9. Implement a statistics-based stringer - use a large corpus of compiled binaries (with debug data) to deduce what kind of characters, and how much of them, predicts well if this is a string or not
-
