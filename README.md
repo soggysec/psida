@@ -1,6 +1,6 @@
 PSIDA
 =========
-### Python Scripts for IDA [[[by the Argus Research Team]]]
+### Python Scripts for IDA [by the Argus Research Team]
 
 PSIDA is a collection of useful Python scripts for IDA.
 At this point, PSIDA focuses on collaborative reverse engineering in two models:
