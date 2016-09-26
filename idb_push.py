@@ -16,81 +16,114 @@ except ImportError:
     print "WARNING: zmq not found, idb_push will not function properly"
     zmq = None
 
-
 CONTEXT_MENU_ACTION_NAME = "idb_push:send_address"
 
-# connection strings for the backend (typically different ports in the same machine)
-ZMQ_PUB_CONNECTION_STRING = r"tcp://backend:5559"
-ZMQ_SUB_CONNECTION_STRING = r"tcp://backend:5560"
+CONNECTION_STRING_FORMAT = r"tcp://%s:%d"
 
-ZMQ_TIMEOUT_MS = 100
-ZMQ_CONNECTIVITY_TEST_TIMEOUT = 1000
+CONFIG_FILE_NAME = os.path.join((os.path.dirname(__file__)), r'idb_push.cfg')
 
-MAX_ITEMS_IN_LIST = 100
+USER = 'user'
+BACKEND_HOSTNAME = 'backend_hostname'
+SUB_PORT = 'sub_port'
+PUB_PORT = 'pub_port'
+ZMQ_TIMEOUT_MS = 'timeout'
+MAX_ITEMS_IN_LIST = 'max_items'
+ZMQ_CONNECTIVITY_TEST_TIMEOUT_MS = 'connectivity_test_timeout'
 
-USER = os.getenv('COMPUTERNAME')
+# filled with reasonable defaults
+CONFIGURATION = {
+    USER: os.getenv('COMPUTERNAME'),
+    BACKEND_HOSTNAME: '',
+    SUB_PORT: 5560,
+    PUB_PORT: 5559,
+    ZMQ_TIMEOUT_MS: 100,
+    ZMQ_CONNECTIVITY_TEST_TIMEOUT_MS: 1000,
+    MAX_ITEMS_IN_LIST: 100
+}
 
 
 class UpdateTypes(object):
     Name, Comment, RepeatableComment, AnteriorLine, PosteriorLine, LookHere = range(6)
 
 
-def configure(pub_connection_string=None,
-              sub_connection_string=None,
+def store_configuration():
+    with open(CONFIG_FILE_NAME, 'w') as f:
+        json.dump(CONFIGURATION, f)
+
+
+def load_configuration():
+    global CONFIGURATION
+
+    with open(CONFIG_FILE_NAME) as f:
+        CONFIGURATION = json.load(f)
+
+
+def configure(backend_hostname=None,
+              pub_port=None,
+              sub_port=None,
               timeout=None,
+              connectivity_test_timeout=None,
               max_items=None,
               user=None):
-    if pub_connection_string is not None:
-        global ZMQ_PUB_CONNECTION_STRING
-        ZMQ_PUB_CONNECTION_STRING = pub_connection_string
+    global CONFIGURATION
 
-    if sub_connection_string is not None:
-        global ZMQ_SUB_CONNECTION_STRING
-        ZMQ_SUB_CONNECTION_STRING = sub_connection_string
+    # since this is a dictionary, all the arguments
+    # that are None will overwrite one another -
+    # and we don't mind at all
+    arguments_to_names = {backend_hostname: BACKEND_HOSTNAME,
+                          pub_port: PUB_PORT,
+                          sub_port: SUB_PORT,
+                          timeout: ZMQ_TIMEOUT_MS,
+                          connectivity_test_timeout: ZMQ_CONNECTIVITY_TEST_TIMEOUT_MS,
+                          max_items: MAX_ITEMS_IN_LIST,
+                          user: USER}
 
-    if timeout is not None:
-        global ZMQ_TIMEOUT_MS
-        ZMQ_TIMEOUT_MS = timeout
+    for (argument, name) in arguments_to_names.iteritems():
+        if argument is None:
+            continue
+        CONFIGURATION[name] = argument
 
-    if max_items is not None:
-        global MAX_ITEMS_IN_LIST
-        MAX_ITEMS_IN_LIST = max_items
-
-    if user is not None:
-        global USER
-        USER = user
+    store_configuration()
 
 
-def zmq_test_connectivity(pub_connection_string, sub_connection_string):
+def zmq_test_connectivity():
+    pub_connection_string = r"tcp://%s:%d" % (CONFIGURATION[BACKEND_HOSTNAME],
+                                              CONFIGURATION[PUB_PORT])
+    sub_connection_string = r"tcp://%s:%d" % (CONFIGURATION[BACKEND_HOSTNAME],
+                                              CONFIGURATION[SUB_PORT])
+
     context = zmq.Context()
     random.seed()
 
-    # open a transmitting socket
-    tx_socket = context.socket(zmq.PUB)
-    tx_socket.setsockopt(zmq.LINGER, ZMQ_TIMEOUT_MS)
-    tx_socket.connect(pub_connection_string)
-    topic = "0"  # dummy
-
-    # open a receiving socket
-    rx_socket = context.socket(zmq.SUB)
-    rx_socket.connect(sub_connection_string)
-    rx_socket.setsockopt(zmq.SUBSCRIBE, "")
-    rx_socket.RCVTIMEO = ZMQ_TIMEOUT_MS
-
-    # sleep to allow both sockets to connect
-    time.sleep(ZMQ_TIMEOUT_MS / 1000.0)
-
-    # send a random test packet
-    random_string = "%010x" % random.randrange(16 ** 10)
-    tx_socket.send_multipart([topic, json.dumps(random_string)])
-
-    # wait for a while for the reply to arrive
-    rx_end_time = time.time() + (ZMQ_CONNECTIVITY_TEST_TIMEOUT / 1000.0)
+    rx_end_time = time.time() + (CONFIGURATION[ZMQ_CONNECTIVITY_TEST_TIMEOUT_MS] / 1000.0)
     found_random_string = False
 
     while time.time() < rx_end_time:
         try:
+            # open a transmitting socket
+            tx_socket = context.socket(zmq.PUB)
+            tx_socket.setsockopt(zmq.LINGER, CONFIGURATION[ZMQ_TIMEOUT_MS])
+            tx_socket.connect(pub_connection_string)
+            topic = "0"  # dummy
+
+            # open a receiving socket
+            rx_socket = context.socket(zmq.SUB)
+            rx_socket.connect(sub_connection_string)
+            rx_socket.setsockopt(zmq.SUBSCRIBE, "")
+            rx_socket.RCVTIMEO = CONFIGURATION[ZMQ_TIMEOUT_MS]
+
+            # sleep to allow both sockets to connect
+            time.sleep(CONFIGURATION[ZMQ_TIMEOUT_MS] / 1000.0)
+
+            # send a random test packet
+            random_string = "%010x" % random.randrange(16 ** 10)
+            tx_socket.send_multipart([topic, json.dumps(random_string)])
+
+            # wait for a while for the reply to arrive
             _, message = rx_socket.recv_multipart()
+            tx_socket.close()
+            rx_socket.close()
+
             if random_string in message:
                 found_random_string = True
                 break
@@ -99,26 +132,26 @@ def zmq_test_connectivity(pub_connection_string, sub_connection_string):
             # timeout - that's OK
             continue
 
-    tx_socket.close()
-    rx_socket.close()
-
     if not found_random_string:
         raise Exception("ZMQ connectivity test failed!")
 
 
-def zmq_pub_json(connection_string, json_message):
+def zmq_pub_json(json_message):
     try:
+        connection_string = CONNECTION_STRING_FORMAT % (CONFIGURATION[BACKEND_HOSTNAME],
+                                                        CONFIGURATION[PUB_PORT])
+
         if 'user' not in json_message:
-            json_message['user'] = USER
+            json_message['user'] = CONFIGURATION[USER]
         if 'project' not in json_message:
             json_message['project'] = os.path.basename(idc.GetIdbPath())
 
         context = zmq.Context()
         zmq_socket = context.socket(zmq.PUB)
-        zmq_socket.setsockopt(zmq.LINGER, ZMQ_TIMEOUT_MS)
+        zmq_socket.setsockopt(zmq.LINGER, CONFIGURATION[ZMQ_TIMEOUT_MS])
         zmq_socket.connect(connection_string)
         topic = "0"  # dummy
-        time.sleep(ZMQ_TIMEOUT_MS / 1000.0)
+        time.sleep(CONFIGURATION[ZMQ_TIMEOUT_MS] / 1000.0)
         zmq_socket.send_multipart([topic, json.dumps(json_message)])
         zmq_socket.close()
     except zmq.ZMQBaseError:
@@ -136,9 +169,9 @@ class RenameIDPHook(idaapi.IDP_Hooks):
                 (new_name is not None) and
                 (len(new_name) > 0) and
                 (not common.is_default_name(new_name))):
-            zmq_pub_json(ZMQ_PUB_CONNECTION_STRING, {'type': UpdateTypes.Name,
-                                                     'address': ea,
-                                                     'name': new_name})
+            zmq_pub_json({'type': UpdateTypes.Name,
+                          'address': ea,
+                          'name': new_name})
 
         return idaapi.IDP_Hooks.renamed(self, ea, new_name, local_name)
 
@@ -161,7 +194,7 @@ class CommentIDBHook(idaapi.IDB_Hooks):
             message['comment'] = common.get_comment(ea)
 
         if g_hooks_enabled and (message['comment'] is not None) and (len(message['comment']) > 0):
-            zmq_pub_json(ZMQ_PUB_CONNECTION_STRING, message)
+            zmq_pub_json(message)
 
         return idaapi.IDB_Hooks.cmt_changed(self, ea, is_repeatable)
 
@@ -180,7 +213,7 @@ class CommentIDBHook(idaapi.IDB_Hooks):
             message['comment'] = common.get_comment(ea)
 
         if g_hooks_enabled and (message['comment'] is not None) and (len(message['comment']) > 0):
-            zmq_pub_json(ZMQ_PUB_CONNECTION_STRING, message)
+            zmq_pub_json(message)
 
         return idaapi.IDB_Hooks.area_cmt_changed(self, areas, area, comment, is_repeatable)
 
@@ -201,7 +234,7 @@ class CommentIDBHook(idaapi.IDB_Hooks):
             return idaapi.IDB_Hooks.extra_cmt_changed(self, ea, line_idx, cmt)
 
         if g_hooks_enabled and (message['line'] is not None) and (len(message['line']) > 0):
-            zmq_pub_json(ZMQ_PUB_CONNECTION_STRING, message)
+            zmq_pub_json(message)
 
         return idaapi.IDB_Hooks.extra_cmt_changed(self, ea, line_idx, cmt)
 
@@ -219,16 +252,17 @@ g_form = None
 
 
 class ReceiveThread(QtCore.QThread):
-    def __init__(self, connection_string):
+    def __init__(self):
         super(ReceiveThread, self).__init__()
         self._should_stop = False
-        self._connection_string = connection_string
+        self._connection_string = r"tcp://%s:%d" % (CONFIGURATION[BACKEND_HOSTNAME],
+                                                    CONFIGURATION[SUB_PORT])
         self._context = zmq.Context()
 
         self._socket = self._context.socket(zmq.SUB)
-        self._socket.connect(connection_string)
+        self._socket.connect(self._connection_string)
         self._socket.setsockopt(zmq.SUBSCRIBE, "")
-        self._socket.RCVTIMEO = ZMQ_TIMEOUT_MS
+        self._socket.RCVTIMEO = CONFIGURATION[ZMQ_TIMEOUT_MS]
 
     def signal_stop(self):
         self._should_stop = True
@@ -247,7 +281,7 @@ class ReceiveThread(QtCore.QThread):
                     # don't receive your own updates
                     continue
                 if ('project' not in message or
-                        message['project'] != os.path.basename(idc.GetIdbPath())):
+                            message['project'] != os.path.basename(idc.GetIdbPath())):
                     # don't receive updates for other projects
                     continue
                 update_form(message)
@@ -263,12 +297,17 @@ class ReceiveThread(QtCore.QThread):
                 self._socket = self._context.socket(zmq.SUB)
                 self._socket.connect(self._connection_string)
                 self._socket.setsockopt(zmq.SUBSCRIBE, "")
-                self._socket.RCVTIMEO = ZMQ_TIMEOUT_MS
+                self._socket.RCVTIMEO = CONFIGURATION[ZMQ_TIMEOUT_MS]
 
 
 def start():
+    print "CONFIGURATION:"
+    for (name, value) in sorted(CONFIGURATION.iteritems(),
+                                key=lambda (n, v): n):
+        print "\t%s: %s" % (name, str(value))
+
     # test connectivity
-    zmq_test_connectivity(ZMQ_PUB_CONNECTION_STRING, ZMQ_SUB_CONNECTION_STRING)
+    zmq_test_connectivity()
 
     if not g_rename_hook.hook():
         raise Exception("RenameIDPHook installation FAILED")
@@ -280,7 +319,7 @@ def start():
     g_hooks_enabled = True
 
     global g_receive_thread
-    g_receive_thread = ReceiveThread(ZMQ_SUB_CONNECTION_STRING)
+    g_receive_thread = ReceiveThread()
     g_receive_thread.start()
 
     global g_form
@@ -396,7 +435,8 @@ def on_go_to_address_button_clicked():
         index = indices[0].row()
         address = g_item_list_model.item(index).data()['address']
         idc.Jump(address)
-
+    except:
+        traceback.print_exc()
     finally:
         g_item_list_mutex.unlock()
 
@@ -416,6 +456,8 @@ def on_apply_button_clicked():
                 removed_rows += 1
 
         idc.Refresh()
+    except:
+        traceback.print_exc()
 
     finally:
         g_item_list_mutex.unlock()
@@ -428,6 +470,8 @@ def on_discard_button_clicked():
         indices = [index.row() for index in g_item_list.selectedIndexes()]
         for i in sorted(indices, reverse=True):
             g_item_list_model.removeRow(i)
+    except:
+        traceback.print_exc()
 
     finally:
         g_item_list_mutex.unlock()
@@ -466,6 +510,9 @@ def apply_update(row_index):
             address = update['address']
             line_index = update['line_index']
 
+            print "UpdateTypes.AnteriorLine"
+            print update
+
             # in order for line i to be displayed all lines before i
             # must be non-empty
             for i in xrange(0, line_index):
@@ -499,6 +546,8 @@ def apply_update(row_index):
 
         if should_remove_row:
             g_item_list_model.removeRow(row_index)
+    except:
+        traceback.print_exc()
 
     finally:
         g_item_list_mutex.unlock()
@@ -512,6 +561,8 @@ def on_item_list_double_clicked(index):
         row_index = index.row()
         apply_update(row_index)
         idc.Refresh()
+    except:
+        traceback.print_exc()
     finally:
         g_item_list_mutex.unlock()
 
@@ -530,6 +581,8 @@ def add_item(message, description):
             g_item_list_model.removeRow(0)
 
         g_item_list_model.appendRow(item)
+    except:
+        traceback.print_exc()
     finally:
         g_item_list_mutex.unlock()
 
@@ -622,6 +675,8 @@ def update_form(message):
 
         else:
             print "WHAAAAAT does type %d mean in message %s?" % (message_type, str(message))
+    except:
+        traceback.print_exc()
 
     finally:
         g_item_list_mutex.unlock()
@@ -653,8 +708,8 @@ class SendPointerFromContextMenu(idaapi.action_handler_t):
         idaapi.action_handler_t.__init__(self)
 
     def activate(self, ctx):
-        zmq_pub_json(ZMQ_PUB_CONNECTION_STRING, {'type': UpdateTypes.LookHere,
-                                                 'address': idc.ScreenEA()})
+        zmq_pub_json({'type': UpdateTypes.LookHere,
+                      'address': idc.ScreenEA()})
         return 1
 
     def update(self, ctx):
@@ -687,3 +742,19 @@ def uninstall_ui_hooks():
     if g_ui_hooks is not None:
         g_ui_hooks.unhook()
         g_ui_hooks = None
+
+
+# load from the configuration file -
+# and create it if necessary
+try:
+    if os.path.isfile(CONFIG_FILE_NAME):
+        # read from the configuration file
+        load_configuration()
+    else:
+        # create a configuration file
+        # with default values
+        store_configuration()
+
+except:
+    print "ERROR while loading or creating the configuration file"
+    traceback.print_exc()
