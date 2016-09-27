@@ -38,7 +38,7 @@ CONFIGURATION = {
     PUB_PORT: 5559,
     ZMQ_TIMEOUT_MS: 100,
     ZMQ_CONNECTIVITY_TEST_TIMEOUT_MS: 1000,
-    MAX_ITEMS_IN_LIST: 100
+    MAX_ITEMS_IN_LIST: 1000
 }
 
 
@@ -249,6 +249,22 @@ g_item_list_mutex = None
 g_item_list_model = None
 g_item_list = None
 g_form = None
+# maps identifying properties of an update to the actual update object and its description
+# for anterior and posterior lines the identifier is the triplet
+# (address, update type, line index), for all other types it's
+# (address, update type)
+g_identifiers_to_updates = {}
+
+
+def get_identifier(update_json):
+    update_type = update_json['type']
+    address = update_json['address']
+
+    if update_type in [UpdateTypes.AnteriorLine,
+                       UpdateTypes.PosteriorLine]:
+        return address, update_type, update_json['line_index']
+
+    return address, update_type
 
 
 class ReceiveThread(QtCore.QThread):
@@ -277,7 +293,7 @@ class ReceiveThread(QtCore.QThread):
                 message = json.loads(json_message)
                 if message is None or len(message) == 0:
                     continue
-                if 'user' not in message or message['user'] == USER:
+                if 'user' not in message or message['user'] == CONFIGURATION[USER]:
                     # don't receive your own updates
                     continue
                 if ('project' not in message or
@@ -430,6 +446,7 @@ def on_go_to_address_button_clicked():
 
         indices = g_item_list.selectedIndexes()
         if len(indices) != 1:
+            print "Can't go to more than one update at once"
             return
 
         index = indices[0].row()
@@ -469,12 +486,18 @@ def on_discard_button_clicked():
 
         indices = [index.row() for index in g_item_list.selectedIndexes()]
         for i in sorted(indices, reverse=True):
+            update = g_item_list_model.item(i).data()
+
             g_item_list_model.removeRow(i)
+            g_identifiers_to_updates.pop(get_identifier(update))
+
     except:
         traceback.print_exc()
 
     finally:
         g_item_list_mutex.unlock()
+
+    assert g_item_list_model.rowCount() == len(g_identifiers_to_updates)
 
 
 def apply_update(row_index):
@@ -490,24 +513,24 @@ def apply_update(row_index):
         # apply update
         update = g_item_list_model.item(row_index).data()
         update_type = update['type']
+        address = update['address']
 
         if update_type == UpdateTypes.Name:
-            address = update['address']
+
             name = update['name']
-            idc.MakeName(address, str(name))
+            if not idc.MakeName(address, str(name)):
+                # the update failed - don't remove it
+                should_remove_row = False
 
         elif update_type == UpdateTypes.Comment:
-            address = update['address']
             comment = update['comment']
             common.set_comment(address, str(comment))
 
         elif update_type == UpdateTypes.RepeatableComment:
-            address = update['address']
             comment = update['comment']
             common.set_repeated_comment(address, str(comment))
 
         elif update_type == UpdateTypes.AnteriorLine:
-            address = update['address']
             line_index = update['line_index']
 
             print "UpdateTypes.AnteriorLine"
@@ -523,7 +546,6 @@ def apply_update(row_index):
             idc.ExtLinA(address, line_index, str(update['line']))
 
         elif update_type == UpdateTypes.PosteriorLine:
-            address = update['address']
             line_index = update['line_index']
 
             # in order for line i to be displayed all lines before i
@@ -536,7 +558,6 @@ def apply_update(row_index):
             idc.ExtLinB(address, line_index, str(update['line']))
 
         elif update_type == UpdateTypes.LookHere:
-            address = update['address']
             idc.Jump(address)
             should_remove_row = False
 
@@ -546,13 +567,16 @@ def apply_update(row_index):
 
         if should_remove_row:
             g_item_list_model.removeRow(row_index)
+            g_identifiers_to_updates.pop(get_identifier(update))
     except:
         traceback.print_exc()
 
     finally:
         g_item_list_mutex.unlock()
         g_hooks_enabled = True
-        return should_remove_row
+
+    assert g_item_list_model.rowCount() == len(g_identifiers_to_updates)
+    return should_remove_row
 
 
 def on_item_list_double_clicked(index):
@@ -570,21 +594,39 @@ def on_item_list_double_clicked(index):
 def add_item(message, description):
     try:
         g_item_list_mutex.lock()
+        # make sure we don't have the same type of update to the
+        # same address - if so, remove the old one!
+        new_message_identifier = get_identifier(message)
+
+        if new_message_identifier in g_identifiers_to_updates:
+            # we have the same type of update for the same address
+            old_update, old_description = g_identifiers_to_updates[new_message_identifier]
+            matching_items = g_item_list_model.findItems(old_description)
+            assert len(matching_items) == 1
+            g_item_list_model.removeRow(matching_items[0].row())
+
         # print description
         item = QtGui.QStandardItem()
         item.setText(description)
         item.setData(message)
         item.setToolTip(description)
 
-        if g_item_list_model.rowCount() >= MAX_ITEMS_IN_LIST:
-            print "REMOVING"
+        if g_item_list_model.rowCount() >= CONFIGURATION[MAX_ITEMS_IN_LIST]:
+            print "LIMIT OF %d ITEMS REACHED - REMOVING OLDEST ENTRY" % CONFIGURATION[MAX_ITEMS_IN_LIST]
+            doomed_update = g_item_list_model.item(0).data()
+
             g_item_list_model.removeRow(0)
+            g_identifiers_to_updates.pop(get_identifier(doomed_update))
 
         g_item_list_model.appendRow(item)
+        g_identifiers_to_updates[new_message_identifier] = (message, description)
+
     except:
         traceback.print_exc()
     finally:
         g_item_list_mutex.unlock()
+
+    assert g_item_list_model.rowCount() == len(g_identifiers_to_updates)
 
 
 def update_form(message):
