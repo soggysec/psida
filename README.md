@@ -28,8 +28,7 @@ In order to use PSIDA you need to:
 
 	3.2. Install zmq_forwarder as a Windows service and start it (via services.msc); setting it as Automatic is probably a good idea.
 
-	3.3. Change the ZMQ_PUB_CONNECTION_STRING and ZMQ_SUB_CONNECTION_STRING in idb_push.py to use the hostname/IPv4 address of the machine that runs zmq_forwarder (you can also 
-change it at run time).
+	3.3. Set the back-end host name via idb_push.configure(backend_hostname='your_backend_hostname_or_ip'); this setting is permanently saved in idb_push.cfg.
 
 
 At this point PSIDA supports only IDA 6.9. It can be made to work on IDA 6.8 (and probably earlier versions), but it's tricky and requires (at least) a recompiled version of the IDAPython plugin that exposes the necessary functions.
@@ -50,13 +49,11 @@ Inside the IDB_PUSH tab you have several shortcuts:
 
 Known Issues
 ------------
-1. Can't connect to the backend server running zmq_forwarder.py: ZMQ currently doesn't support IPv6, and some hostname lookups return IPv6 by default; try to change the hostnames in ZMQ_PUB_CONNECTION_STRING and ZMQ_SUB_CONNECTION_STRING to the IPv4 addresses of the server.
+1. Can't connect to the backend server running zmq_forwarder.py: ZMQ currently doesn't support IPv6, and some hostname lookups return IPv6 by default; to work around the issue set the back-end hostname to the IPv4 addresses of the server via idb_push.configure(backend_hostname='<your backend IP>').
 
 2. IDA freezes occasionally when closing; AFAIK this doesn't have any adverse effect.
 
 3. Occasionally a few of the IDA tabs go black completely (usually the Functions/Names tabs and the main Disassembly tab); pressing Space twice solves it.
-
-4. When you highligh registers an exception is thrown and printed to the console (but has no negative effects otherwise); this has something to do with the default implementation of IDP hooks.
 
 
 You can always open an issue at https://bitbucket.org/argussecurity/psida/issues.
@@ -72,28 +69,22 @@ Future Plans
 ------------
 Note: these are not in order of importance!
 
--1. Add a persistent configuration to idb_push(), so that you have to call configure() only once.
+* Solve the known issues
 
-0. Solve the known issues
-
-1. Write a zmq_forwarder.py alternative for *nix (if we're still using ZeroMQ)
+* Write a zmq_forwarder.py alternative for *nix (if we're still using ZeroMQ)
  
-2. Merge comments: when you merge you should add the old name (or the alternate name, if unmerged) of the function to the function comments; use repeated comments for this, unless you have regular comments (which override them)
+* Merge comments: when you merge you should add the old name (or the alternate name, if unmerged) of the function to the function comments; use repeated comments for this, unless you have regular comments (which override them)
 
-3. Add a Save/Open dialogue for pickle()/unpickle()
-
-4. Implement a runtime progress logger
+* Implement a runtime progress logger
 	- use the hooks in idb_push (factor them out)
 	- store all the hooked actions - this gets you all the pickleable changes really fast - which is important since pickle() can be really slow
 	- make it run automatically (via idapythonrc.py)
  
-5. Add ASLR support - store addresses relative to beginning of segments and offer the user to accept segment rebasing (only if this is actually relevant)
+* Add ASLR support - store addresses relative to beginning of segments and offer the user to accept segment rebasing (only if this is actually relevant)
 
-6. Add support for pickling/tracking stack argument names (similar to idc.MakeLocal source code)
+* Add support for pickling/tracking stack argument names (similar to idc.MakeLocal source code)
 
-7. Add support for pickling/tracking memory address types (word/dword/byte, string, offset, etc.)
+* Add support for pickling/tracking memory address types (code, word/dword/byte, string, offset, etc.) and applying it correctly [THIS SEEMS BIG]
 
-8. Add support for pickling/tracking function prototypes (see also "Put on your tinfo_t hat if you're my type" from DefCon 23)
+* Add support for pickling/tracking function prototypes (see also "Put on your tinfo_t hat if you're my type" from DefCon 23)
 	- idc.GetTinfo(), idc.ApplyType(address, tuple as above)
- 
-9. Implement a statistics-based stringer - use a large corpus of compiled binaries (with debug data) to deduce what kind of characters, and how much of them, predicts well if this is a string or not
