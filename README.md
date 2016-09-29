@@ -69,26 +69,22 @@ Future Plans
 ------------
 Note: these are not in order of importance!
 
-0. Solve the known issues
+* Solve the known issues
 
-1. Write a zmq_forwarder.py alternative for *nix (if we're still using ZeroMQ)
+* Write a zmq_forwarder.py alternative for *nix (if we're still using ZeroMQ)
  
-2. Merge comments: when you merge you should add the old name (or the alternate name, if unmerged) of the function to the function comments; use repeated comments for this, unless you have regular comments (which override them)
+* Merge comments: when you merge you should add the old name (or the alternate name, if unmerged) of the function to the function comments; use repeated comments for this, unless you have regular comments (which override them)
 
-3. Add a Save/Open dialogue for pickle()/unpickle()
-
-4. Implement a runtime progress logger
+* Implement a runtime progress logger
 	- use the hooks in idb_push (factor them out)
 	- store all the hooked actions - this gets you all the pickleable changes really fast - which is important since pickle() can be really slow
 	- make it run automatically (via idapythonrc.py)
  
-5. Add ASLR support - store addresses relative to beginning of segments and offer the user to accept segment rebasing (only if this is actually relevant)
+* Add ASLR support - store addresses relative to beginning of segments and offer the user to accept segment rebasing (only if this is actually relevant)
 
-6. Add support for pickling/tracking stack argument names (similar to idc.MakeLocal source code)
+* Add support for pickling/tracking stack argument names (similar to idc.MakeLocal source code)
 
-7. Add support for pickling/tracking memory address types (code, word/dword/byte, string, offset, etc.) and applying it correctly [THIS SEEMS BIG]
+* Add support for pickling/tracking memory address types (code, word/dword/byte, string, offset, etc.) and applying it correctly [THIS SEEMS BIG]
 
-8. Add support for pickling/tracking function prototypes (see also "Put on your tinfo_t hat if you're my type" from DefCon 23)
+* Add support for pickling/tracking function prototypes (see also "Put on your tinfo_t hat if you're my type" from DefCon 23)
 	- idc.GetTinfo(), idc.ApplyType(address, tuple as above)
- 
-9. Implement a statistics-based stringer - use a large corpus of compiled binaries (with debug data) to deduce what kind of characters, and how much of them, predicts well if this is a string or not
