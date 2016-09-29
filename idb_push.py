@@ -293,6 +293,9 @@ class ReceiveThread(QtCore.QThread):
                 message = json.loads(json_message)
                 if message is None or len(message) == 0:
                     continue
+
+                message = common.convert_struct_to_utf8(message)
+
                 if 'user' not in message or message['user'] == CONFIGURATION[USER]:
                     # don't receive your own updates
                     continue
@@ -512,23 +515,24 @@ def apply_update(row_index):
         g_hooks_enabled = False
         # apply update
         update = g_item_list_model.item(row_index).data()
+        update = common.convert_struct_to_utf8(update)
         update_type = update['type']
         address = update['address']
 
         if update_type == UpdateTypes.Name:
 
             name = update['name']
-            if not idc.MakeName(address, str(name)):
-                # the update failed - don't remove it
+            if not common.set_name(address, name):
+                print "Failed to name 0x%x as %s" % (address, name)
                 should_remove_row = False
 
         elif update_type == UpdateTypes.Comment:
             comment = update['comment']
-            common.set_comment(address, str(comment))
+            common.set_comment(address, comment)
 
         elif update_type == UpdateTypes.RepeatableComment:
             comment = update['comment']
-            common.set_repeated_comment(address, str(comment))
+            common.set_repeated_comment(address, comment)
 
         elif update_type == UpdateTypes.AnteriorLine:
             line_index = update['line_index']
@@ -543,7 +547,7 @@ def apply_update(row_index):
                 if line is None or len(line) == 0:
                     idc.ExtLinA(address, i, " ")
 
-            idc.ExtLinA(address, line_index, str(update['line']))
+            idc.ExtLinA(address, line_index, update['line'])
 
         elif update_type == UpdateTypes.PosteriorLine:
             line_index = update['line_index']
@@ -555,14 +559,14 @@ def apply_update(row_index):
                 if line is None or len(line) == 0:
                     idc.ExtLinB(address, i, " ")
 
-            idc.ExtLinB(address, line_index, str(update['line']))
+            idc.ExtLinB(address, line_index, update['line'])
 
         elif update_type == UpdateTypes.LookHere:
             idc.Jump(address)
             should_remove_row = False
 
         else:
-            print "WHAAAAAT does type %d mean in update %s?" % (update_type, str(update))
+            print "WHAAAAAT does type %d mean in update %s?" % (update_type, update)
             return
 
         if should_remove_row:
@@ -638,13 +642,13 @@ def update_form(message):
 
         if message_type == UpdateTypes.Name:
             new_name = message['name']
-            current_name = idc.Name(address)
+            current_name = common.get_non_default_name(address)
 
             if current_name == new_name:
                 # not an update
                 return
 
-            if (current_name is not None) and (len(current_name) > 0) and (not common.is_default_name(current_name)):
+            if current_name is not None:
                 description = "Name [0x%x]: %s (YOURS: %s)" % (address, new_name, current_name)
             else:
                 description = "Name [0x%x]: %s" % (address, new_name)
@@ -706,9 +710,9 @@ def update_form(message):
 
         elif message_type == UpdateTypes.LookHere:
             user = message['user']
-            current_name = idc.Name(address)
+            current_name = common.get_non_default_name(address)
 
-            if (current_name is not None) and (len(current_name) > 0) and (not common.is_default_name(current_name)):
+            if current_name is not None:
                 description = "%s: look at 0x%x (YOUR NAME: %s)" % (user, address, current_name)
             else:
                 description = "%s: look at 0x%x" % (user, address)

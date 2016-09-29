@@ -56,13 +56,19 @@ def sanitize_string(s, default_char='_'):
     return ''.join(s)
 
 
-def convert_struct_to_ascii(struct):
+def convert_struct_to_utf8(struct):
+    """
+    Converts any composition of primitive types (lists, tuples and dictionaries)
+    and (recursively) their contents into UTF-8.
+    """
     if isinstance(struct, dict):
-        return {convert_struct_to_ascii(key): convert_struct_to_ascii(value) for key, value in struct.iteritems()}
+        return {convert_struct_to_utf8(key): convert_struct_to_utf8(value) for key, value in struct.iteritems()}
     elif isinstance(struct, list):
-        return [convert_struct_to_ascii(element) for element in struct]
+        return [convert_struct_to_utf8(element) for element in struct]
     elif isinstance(struct, tuple):
-        return tuple([convert_struct_to_ascii(element) for element in struct])
+        return tuple([convert_struct_to_utf8(element) for element in struct])
+    elif isinstance(struct, set):
+        return set([convert_struct_to_utf8(element) for element in struct])
     elif isinstance(struct, unicode):
         return struct.encode('utf-8')
     else:
@@ -100,8 +106,10 @@ def get_comment(address):
 
 
 def set_comment(address, comment):
-    idc.MakeComm(address, comment)
+    assert type(comment) == str
+
     # Always succeeds
+    idc.MakeComm(address, comment)
 
 
 def get_repeated_comment(address):
@@ -116,7 +124,31 @@ def get_repeated_comment(address):
 
 
 def set_repeated_comment(address, repeated_comment):
+    assert type(repeated_comment) == str
     if is_function_start(address):
         idc.SetFunctionCmt(address, repeated_comment, 1)
     else:
         idc.MakeRptCmt(address, repeated_comment)
+
+
+def get_non_default_name(address):
+    name = idc.NameEx(address, address)
+    if name is not None and len(name) > 0 and not is_default_name(name):
+        return name
+    return None
+
+
+def set_name(address, new_name, verbose=True):
+    assert type(new_name) == str
+
+    # if the name exists elsewhere you get an annoying popup,
+    # so first check that this isn't the case
+    current_name_location = idc.LocByName(new_name)
+    if current_name_location != idc.BADADDR:
+        if verbose:
+            print "0x%x: can't rename byte as '%s' because the name is already used at 0x%x" % (address,
+                                                                                                new_name,
+                                                                                                current_name_location)
+        return False
+
+    return idc.MakeName(address, new_name)

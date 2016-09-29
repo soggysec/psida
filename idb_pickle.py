@@ -41,8 +41,8 @@ def get_names():
     for _, address, end_address in segments:
 
         while address < end_address:
-            name = idc.NameEx(address, address)
-            if name is not None and len(name) > 0 and not common.is_default_name(name):
+            name = common.get_non_default_name(address)
+            if name is not None:
                 names_dictionary[address] = name
             address += idc.ItemSize(address)
 
@@ -57,8 +57,8 @@ def get_function_names():
     names_dictionary = {}
 
     for address in idautils.Functions():
-        name = idc.Name(address)
-        if len(name) > 0 and not common.is_default_name(name):
+        name = common.get_non_default_name(address)
+        if name is not None:
             names_dictionary[address] = name
 
     return names_dictionary
@@ -66,11 +66,11 @@ def get_function_names():
 
 def set_names(names_dictionary, overwrite=False, conflicts=None):
     for address, new_name in names_dictionary.iteritems():
-        current_name = idc.Name(address)
+        current_name = common.get_non_default_name(address)
         if new_name == current_name:
             continue
-        elif len(current_name) == 0 or common.is_default_name(current_name) or overwrite:
-            if not idc.MakeName(address, new_name):
+        elif overwrite or current_name is None:
+            if not common.set_name(address, new_name):
                 print "Failed to set name %s to address %s" % (new_name, hex(address))
         else:
             if conflicts is None:
@@ -112,7 +112,7 @@ def get_posterior_lines(address):
 def __set_lines(address, setter, lines):
     if lines is None:
         return
-    for i in common.my_xrange(len(lines)):
+    for i in xrange(len(lines)):
         setter(address, i, lines[i])
 
 
@@ -344,16 +344,15 @@ def populate_form_with_items(items):
 
         if item_type == ItemType.Name:
             new_name = item['name']
-            current_name = idc.Name(address)
+            current_name = common.get_non_default_name(address)
 
             if current_name == new_name:
                 continue
 
-            if (current_name is not None) and (len(current_name) > 0) and (not common.is_default_name(current_name)):
+            if current_name is not None:
                 description = "Name [0x%x]: %s (YOURS: %s)" % (address, new_name, current_name)
             else:
                 description = "Name [0x%x]: %s" % (address, new_name)
-            add_item_to_form(item, description)
 
         elif item_type == ItemType.Comment:
             new_comment = item['comment']
@@ -366,7 +365,6 @@ def populate_form_with_items(items):
                 description = "Comment [0x%x]: %s\n(YOURS: %s)" % (address, new_comment, current_comment)
             else:
                 description = "Comment [0x%x]: %s" % (address, new_comment)
-            add_item_to_form(item, description)
 
         elif item_type == ItemType.RepeatableComment:
             new_comment = item['comment']
@@ -379,7 +377,6 @@ def populate_form_with_items(items):
                 description = "RComment [0x%x]: %s\n(YOURS: %s)" % (address, new_comment, current_comment)
             else:
                 description = "RComment [0x%x]: %s" % (address, new_comment)
-            add_item_to_form(item, description)
 
         elif item_type == ItemType.AnteriorLines:
             new_lines = item['lines']
@@ -394,7 +391,6 @@ def populate_form_with_items(items):
                                                                    '\n'.join(current_lines))
             else:
                 description = "AntLine [0x%x]: %s" % (address, '\n'.join(new_lines))
-            add_item_to_form(item, description)
 
         elif item_type == ItemType.PosteriorLines:
             new_lines = item['lines']
@@ -409,10 +405,11 @@ def populate_form_with_items(items):
                                                                     '\n'.join(current_lines))
             else:
                 description = "PostLine [0x%x]: %s" % (address, '\n'.join(new_lines))
-            add_item_to_form(item, description)
-
         else:
             print "WHAAAAAT does type %d mean in message %s?" % (item_type, str(item))
+            continue
+
+        add_item_to_form(item, description)
 
 
 def make_items(idb_data):
@@ -508,21 +505,23 @@ def apply_item(row_index):
 
         # apply update
         item = g_item_list_model.item(row_index).data()
-        item = common.convert_struct_to_ascii(item)
+        item = common.convert_struct_to_utf8(item)
         item_type = item['type']
         address = item['address']
 
         if item_type == ItemType.Name:
             name = item['name']
-            idc.MakeName(address, str(name))
+            if not common.set_name(address, name):
+                print "Failed to name 0x%x as %s" % (address, name)
+                should_remove_row = False
 
         elif item_type == ItemType.Comment:
             comment = item['comment']
-            common.set_comment(address, str(comment))
+            common.set_comment(address, comment)
 
         elif item_type == ItemType.RepeatableComment:
             comment = item['comment']
-            common.set_repeated_comment(address, str(comment))
+            common.set_repeated_comment(address, comment)
 
         elif item_type == ItemType.AnteriorLines:
             lines = item['lines']
@@ -532,7 +531,7 @@ def apply_item(row_index):
             lines = item['lines']
             set_posterior_lines(address, lines)
         else:
-            print "WHAAAAAT does type %d mean in update %s?" % (item_type, str(item))
+            print "WHAAAAAT does type %d mean in update %s?" % (item_type, item)
             should_remove_row = False
 
         if should_remove_row:
@@ -591,6 +590,11 @@ def unpickle(source_file,
             conflicts = {NAMES_FIELD: name_conflicts,
                          COMMENTS_FIELD: comment_conflicts}
 
+            if len(name_conflicts) + len(comment_conflicts) == 0:
+                # no conflicts need solving
+                print "Unpickling complete at %s" % (time.ctime())
+                return
+
             global g_form
             if g_form is not None:
                 g_form.Close(idaapi.PluginForm.FORM_SAVE)
@@ -601,7 +605,6 @@ def unpickle(source_file,
             populate_form_with_items(make_items(conflicts))
 
         else:
-
             set_names(idb_data[NAMES_FIELD], overwrite)
             set_all_comments(idb_data[COMMENTS_FIELD], overwrite)
 
