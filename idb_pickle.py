@@ -208,7 +208,7 @@ def set_all_comments(comments_dictionary, overwrite=False, conflicts=None):
                    conflicts)
 
 
-def pickle(destination_file, functions_only=False):
+def pickle(destination_file=None, functions_only=False):
     """
     Stores some of the information in the IDB in
     the given file in pickle format - a dictionary of:
@@ -217,6 +217,9 @@ def pickle(destination_file, functions_only=False):
      - function and address names
      - comments
     """
+    if destination_file is None:
+        destination_file = QtWidgets.QFileDialog.getSaveFileName()[0]
+
     print "Started pickling at %s" % (time.ctime())
     idb_data = {INPUT_FILE_MD5_FIELD: idc.GetInputMD5(),
                 SEGMENTS: common.get_segments(),
@@ -546,7 +549,7 @@ def apply_item(row_index):
         return should_remove_row
 
 
-def unpickle(source_file,
+def unpickle(source_file=None,
              overwrite=False,
              ignore_segment_change=False,
              ignore_md5_mismatch=False,
@@ -554,6 +557,9 @@ def unpickle(source_file,
     """
     Loads information from the given pickled file.
     """
+    if source_file is None:
+        source_file = QtWidgets.QFileDialog.getOpenFileName()[0]
+
     hooks_enabled = idb_push.g_hooks_enabled
     try:
         print "Started unpickling at %s" % (time.ctime())
