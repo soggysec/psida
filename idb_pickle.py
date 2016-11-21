@@ -64,6 +64,26 @@ def get_function_names():
     return names_dictionary
 
 
+def get_function_comments():
+    """
+    Returns a dictionary of {address -> (normal comment, repeated comment,
+    anterior lines list, posterior lines list) }.
+    """
+    comments = {}
+
+    for address in idautils.Functions():
+        normal_comment = common.get_comment(address)
+        repeated_comment = common.get_repeated_comment(address)
+        anterior_lines = get_anterior_lines(address)
+        posterior_lines = get_posterior_lines(address)
+
+        if ((normal_comment, repeated_comment, anterior_lines, posterior_lines) !=
+                (None, None, None, None)):
+            comments[address] = (normal_comment, repeated_comment, anterior_lines, posterior_lines)
+
+    return comments
+
+
 def set_names(names_dictionary, overwrite=False, conflicts=None):
     for address, new_name in names_dictionary.iteritems():
         current_name = common.get_non_default_name(address)
@@ -227,7 +247,7 @@ def pickle(destination_file=None, functions_only=False):
 
     if functions_only:
         idb_data[NAMES_FIELD] = get_function_names()
-        idb_data[COMMENTS_FIELD] = {}
+        idb_data[COMMENTS_FIELD] = get_function_comments()
     else:
         idb_data[NAMES_FIELD] = get_names()
         idb_data[COMMENTS_FIELD] = get_all_comments()
