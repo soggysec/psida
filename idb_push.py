@@ -20,7 +20,7 @@ CONTEXT_MENU_ACTION_NAME = "idb_push:send_address"
 
 CONNECTION_STRING_FORMAT = r"tcp://%s:%d"
 
-CONFIG_FILE_NAME = os.path.join((os.path.dirname(__file__)), r'idb_push.cfg')
+CONFIG_FILE_NAME = os.path.join(os.path.expandvars(r"%APPDATA%\Hex-Rays\IDA Pro"), r'idb_push.cfg')
 
 USER = 'user'
 BACKEND_HOSTNAME = 'backend_hostname'
