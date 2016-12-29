@@ -61,30 +61,4 @@ You can always open an issue at https://bitbucket.org/argussecurity/psida/issues
 
 Contributing
 ------------
-Bug fixes and feature pull requests are always welcome, but do review the "Future Plans" and "Known Issues" sections first.
-
-
-
-Future Plans
-------------
-Note: these are not in order of importance!
-
-* Solve the known issues
-
-* Write a zmq_forwarder.py alternative for *nix (if we're still using ZeroMQ)
- 
-* Merge comments: when you merge you should add the old name (or the alternate name, if unmerged) of the function to the function comments; use repeated comments for this, unless you have regular comments (which override them)
-
-* Implement a runtime progress logger
-	- use the hooks in idb_push (factor them out)
-	- store all the hooked actions - this gets you all the pickleable changes really fast - which is important since pickle() can be really slow
-	- make it run automatically (via idapythonrc.py)
- 
-* Add ASLR support - store addresses relative to beginning of segments and offer the user to accept segment rebasing (only if this is actually relevant)
-
-* Add support for pickling/tracking stack argument names (similar to idc.MakeLocal source code)
-
-* Add support for pickling/tracking memory address types (code, word/dword/byte, string, offset, etc.) and applying it correctly [THIS SEEMS BIG]
-
-* Add support for pickling/tracking function prototypes (see also "Put on your tinfo_t hat if you're my type" from DefCon 23)
-	- idc.GetTinfo(), idc.ApplyType(address, tuple as above)
+Bug fixes and feature pull requests are always welcome!
