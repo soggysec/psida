@@ -18,7 +18,7 @@ In order to use PSIDA you need to:
 
 0. Have a 32-bit Python for IDAPython.
 
-1. Copy common.py, idb_pickle.py and idb_push.py into your IDA 6.9/python/ folder.
+1. Copy idb_push_common.py, idb_pickle.py and idb_push.py into your IDA 6.9/python/ folder.
 
 2. Either copy idapythonrc.py into "%APPDATA%\Hex-Rays\IDA Pro" or (if you already have an idapythonrc.py) add "from PyQt5 import QtGui, QtCore, QtWidgets" to it.
 
