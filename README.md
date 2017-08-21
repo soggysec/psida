@@ -28,7 +28,7 @@ In order to use PSIDA you need to:
 
         3.1.1. Install zmq ("pip install pyzmq" should do the trick).
 
-	    3.1.2. Install zmq_forwarder as a Windows service; starting it (via services.msc) and setting it as Automatic is probably a good idea.
+        3.1.2. Install zmq_forwarder as a Windows service; starting it (via services.msc) and setting it as Automatic is probably a good idea.
 
 	3.2. On every local host - Set the back-end host name via idb_push.configure(backend_hostname='your_backend_hostname_or_ip'); this setting is permanently saved in idb_push.cfg.
 
