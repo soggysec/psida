@@ -22,13 +22,15 @@ In order to use PSIDA you need to:
 
 2. Either copy idapythonrc.py into "%APPDATA%\Hex-Rays\IDA Pro" or (if you already have an idapythonrc.py) add "from PyQt5 import QtGui, QtCore, QtWidgets" to it.
 
-3. If you plan on using idb_push you also need to
+3. To use idb_push you also need to:
 
-	3.1. Install zmq ("pip install pyzmq" does the trick).
+    3.1. Create a back-end server with:
 
-	3.2. Install zmq_forwarder as a Windows service and start it (via services.msc); setting it as Automatic is probably a good idea.
+        3.1.1. zmq ("pip install pyzmq" should do the trick).
 
-	3.3. Set the back-end host name via idb_push.configure(backend_hostname='your_backend_hostname_or_ip'); this setting is permanently saved in idb_push.cfg.
+	    3.1.2. zmq_forwarder as a Windows service; starting it (via services.msc) and setting it as Automatic is probably a good idea.
+
+	3.2. And on every local host - Set the back-end host name via idb_push.configure(backend_hostname='your_backend_hostname_or_ip'); this setting is permanently saved in idb_push.cfg.
 
 
 At this point PSIDA supports only IDA 6.9. It can be made to work on IDA 6.8 (and probably earlier versions), but it's tricky and requires (at least) a recompiled version of the IDAPython plugin that exposes the necessary functions.
