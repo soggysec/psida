@@ -599,7 +599,7 @@ def unpickle(source_file=None,
             # using iteritems since iterating on a dictionary returns only the dictionary keys
             if idb_push_common.get_segments() != idb_data[SEGMENTS]:
                 if 1 != idc.AskYN(0, SEGMENT_WARNING % (format_segments(idb_data[SEGMENTS]),
-                                                        format_segments(common.get_segments()))):
+                                                        format_segments(idb_push_common.get_segments()))):
                     # user replied No or Cancel
                     return
 
