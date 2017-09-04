@@ -8,13 +8,14 @@ from idaapi import PluginForm
 import idc
 import random
 from socket import gethostbyname
+import pprint
 
 from PyQt5 import QtGui, QtCore, QtWidgets
 
 try:
     import zmq
 except ImportError:
-    print "WARNING: zmq not found, idb_push will not function properly"
+    print "WARNING - Import - zmq not found, idb_push will not function properly"
     zmq = None
 
 CONTEXT_MENU_ACTION_NAME = "idb_push:send_address"
@@ -43,11 +44,7 @@ CONFIGURATION = {
     MAX_ITEMS_IN_LIST: 1000,
     DEBUG: True
 }
-
-if CONFIGURATION["debug"]:
-    import pprint
-
-
+    
 class UpdateTypes(object):
     Name, Comment, RepeatableComment, AnteriorLine, PosteriorLine, LookHere = range(6)
 
@@ -198,7 +195,7 @@ class RenameIDPHook(idaapi.IDP_Hooks):
 
     def renamed(self, ea, new_name, local_name):
         if CONFIGURATION["debug"]:
-            print "RenameIDPHook.renamed(ea = 0x%x, new_name = %s, local_name = %r)\n" % (ea, new_name, local_name)
+            print "DEBUG - Hooks - RenameIDPHook.renamed(ea = 0x%x, new_name = %s, local_name = %r)\n" % (ea, new_name, local_name)
 
         if (g_hooks_enabled and
                 (new_name is not None) and
@@ -217,7 +214,7 @@ class CommentIDBHook(idaapi.IDB_Hooks):
 
     def cmt_changed(self, ea, is_repeatable):
         if CONFIGURATION["debug"]:
-            print "CommentIDBHook.cmt_changed(arg0 = 0x%x, is_repeatable = %s)" % (ea, is_repeatable)
+            print "DEBUG - Hooks - CommentIDBHook.cmt_changed(arg0 = 0x%x, is_repeatable = %s)" % (ea, is_repeatable)
         
         message = {'address': ea}
 
@@ -235,7 +232,7 @@ class CommentIDBHook(idaapi.IDB_Hooks):
 
     def area_cmt_changed(self, areas, area, comment, is_repeatable):
         if CONFIGURATION["debug"]:
-            print "CommentIDBHook.area_cmt_changed(area_start = 0x%x, comment = %s)" % (area.startEA, comment)
+            print "DEBUG - Hooks - CommentIDBHook.area_cmt_changed(area_start = 0x%x, comment = %s)" % (area.startEA, comment)
 
         ea = area.startEA
         message = {'address': ea}
@@ -254,7 +251,7 @@ class CommentIDBHook(idaapi.IDB_Hooks):
 
     def extra_cmt_changed(self, ea, line_idx, cmt):
         if CONFIGURATION["debug"]:
-            print "CommentIDBHook.extra_cmt_changed(ea = 0x%x, line_idx = %d, cmt = %s)" % (ea, line_idx, cmt)
+            print "DEBUG - Hooks - CommentIDBHook.extra_cmt_changed(ea = 0x%x, line_idx = %d, cmt = %s)" % (ea, line_idx, cmt)
 
         message = {'address': ea, 'line': cmt}
 
@@ -266,7 +263,7 @@ class CommentIDBHook(idaapi.IDB_Hooks):
             message['line_index'] = line_idx - idaapi.E_NEXT
         else:
             if CONFIGURATION["debug"]:
-                print "CommentIDBHook.extra_cmt_changed - unexpected line_idx"
+                print "DEBUG - Hooks - CommentIDBHook.extra_cmt_changed - unexpected line_idx, continuing..."
             return idaapi.IDB_Hooks.extra_cmt_changed(self, ea, line_idx, cmt)
 
         if g_hooks_enabled and (message['line'] is not None) and (len(message['line']) > 0):
@@ -324,7 +321,6 @@ class ReceiveThread(QtCore.QThread):
     def run(self):
         while True:
             if self._should_stop:
-                # print "Receive thread stopped"
                 return
             try:
                 _, json_message = self._socket.recv_multipart()
@@ -358,10 +354,7 @@ class ReceiveThread(QtCore.QThread):
 
 
 def start():
-    print "CONFIGURATION:"
-    for (name, value) in sorted(CONFIGURATION.iteritems(),
-                                key=lambda (n, v): n):
-        print "\t%s: %s" % (name, str(value))
+    print "INFO - Configuration - " + pprint.pformat(CONFIGURATION)
 
     # test connectivity
     zmq_test_connectivity()
@@ -490,7 +483,7 @@ def on_go_to_address_button_clicked():
 
         indices = g_item_list.selectedIndexes()
         if len(indices) != 1:
-            print "Can't go to more than one update at once"
+            print "ERROR - UI - Can't go to more than one update at once"
             return
 
         index = indices[0].row()
@@ -569,7 +562,7 @@ def apply_update(row_index):
 
             name = update['name']
             if not idb_push_common.set_name(address, name):
-                print "Failed to name 0x%x as %s" % (address, name)
+                print "ERROR - Update - Failed to name 0x%x as %s" % (address, name)
                 should_remove_row = False
 
         elif update_type == UpdateTypes.Comment:
@@ -582,10 +575,6 @@ def apply_update(row_index):
 
         elif update_type == UpdateTypes.AnteriorLine:
             line_index = update['line_index']
-
-            print "UpdateTypes.AnteriorLine"
-            print update
-
             # in order for line i to be displayed all lines before i
             # must be non-empty
             for i in xrange(0, line_index):
@@ -612,7 +601,8 @@ def apply_update(row_index):
             should_remove_row = False
 
         else:
-            print "WHAAAAAT does type %d mean in update %s?" % (update_type, update)
+            if CONFIGURATION["debug"]:
+                print "DEBUG - Update - Unrecognized type %d: update %s" % (update_type, update)
             return
 
         if should_remove_row:
@@ -662,7 +652,7 @@ def add_item(message, description):
         item.setToolTip(description)
 
         if g_item_list_model.rowCount() >= CONFIGURATION[MAX_ITEMS_IN_LIST]:
-            print "LIMIT OF %d ITEMS REACHED - REMOVING OLDEST ENTRY" % CONFIGURATION[MAX_ITEMS_IN_LIST]
+            print "INFO - UI - Limit of %d items reached - removing oldest entry" % CONFIGURATION[MAX_ITEMS_IN_LIST]
             doomed_update = g_item_list_model.item(0).data()
 
             g_item_list_model.removeRow(0)
@@ -682,7 +672,6 @@ def add_item(message, description):
 def update_form(message):
     try:
         g_item_list_mutex.lock()
-        # print message
         message_type = message['type']
         address = message['address']
 
@@ -766,7 +755,8 @@ def update_form(message):
             add_item(message, description)
 
         else:
-            print "WHAAAAAT does type %d mean in message %s?" % (message_type, str(message))
+            if CONFIGURATION["debug"]:
+                print "DEBUG - UI - Unrecognized type %d: in message %s" % (message_type, str(message))
     except:
         traceback.print_exc()
 
@@ -849,5 +839,5 @@ try:
 
 except:
     if CONFIGURATION["debug"]:
-        print "ERROR while loading or creating the configuration file"
+        print "ERROR - Configuration - Couldn't load or create the configuration file"
         traceback.print_exc()
