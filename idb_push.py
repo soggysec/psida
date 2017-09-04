@@ -7,6 +7,7 @@ import time
 from idaapi import PluginForm
 import idc
 import random
+from socket import gethostbyname
 
 from PyQt5 import QtGui, QtCore, QtWidgets
 
@@ -28,6 +29,7 @@ SUB_PORT = 'sub_port'
 PUB_PORT = 'pub_port'
 ZMQ_TIMEOUT_MS = 'timeout'
 MAX_ITEMS_IN_LIST = 'max_items'
+DEBUG = 'debug'
 ZMQ_CONNECTIVITY_TEST_TIMEOUT_MS = 'connectivity_test_timeout'
 
 # filled with reasonable defaults
@@ -38,8 +40,12 @@ CONFIGURATION = {
     PUB_PORT: 5559,
     ZMQ_TIMEOUT_MS: 100,
     ZMQ_CONNECTIVITY_TEST_TIMEOUT_MS: 1000,
-    MAX_ITEMS_IN_LIST: 1000
+    MAX_ITEMS_IN_LIST: 1000,
+    DEBUG: True
 }
+
+if CONFIGURATION["debug"]:
+    import pprint
 
 
 class UpdateTypes(object):
@@ -67,6 +73,12 @@ def configure(backend_hostname=None,
               user=None):
     global CONFIGURATION
 
+    # Try resolving the backend_hostname to IPv4.
+    # 'gethostbyname' only supports IPv4, which is nice.
+    # If the given string is an IP address, 'gethostbyname' returns it, which is also nice.
+    if backend_hostname:
+        backend_hostname = gethostbyname(backend_hostname)
+
     # since this is a dictionary, all the arguments
     # that are None will overwrite one another -
     # and we don't mind at all
@@ -87,6 +99,8 @@ def configure(backend_hostname=None,
 
 
 def zmq_test_connectivity():
+    """Creates global socket and tests server connectivity"""
+
     pub_connection_string = r"tcp://%s:%d" % (CONFIGURATION[BACKEND_HOSTNAME],
                                               CONFIGURATION[PUB_PORT])
     sub_connection_string = r"tcp://%s:%d" % (CONFIGURATION[BACKEND_HOSTNAME],
@@ -135,27 +149,47 @@ def zmq_test_connectivity():
     if not found_random_string:
         raise Exception("ZMQ connectivity test failed!")
 
-
-def zmq_pub_json(json_message):
+def open_zmq_socket():
+    global g_zmq_socket
     try:
+        context = zmq.Context()
+        g_zmq_socket = context.socket(zmq.PUB)
+        g_zmq_socket.setsockopt(zmq.LINGER, CONFIGURATION[ZMQ_TIMEOUT_MS])
+
         connection_string = CONNECTION_STRING_FORMAT % (CONFIGURATION[BACKEND_HOSTNAME],
                                                         CONFIGURATION[PUB_PORT])
+        g_zmq_socket.connect(connection_string)
+    except zmq.ZMQBaseError:
+        if CONFIGURATION["debug"]:
+            traceback.print_exc()
+        raise Exception("Error in creating ZMQ socket")
 
+def restart_zmq_socket():
+    close_zmq_socket()
+    open_zmq_socket()
+
+def close_zmq_socket():
+    global g_zmq_socket
+    try:
+        g_zmq_socket.close()
+    except:
+        pass
+    g_zmq_socket = None
+
+def zmq_pub_json(json_message):
+    global g_zmq_socket
+    try:
         if 'user' not in json_message:
             json_message['user'] = CONFIGURATION[USER]
         if 'project' not in json_message:
             json_message['project'] = os.path.basename(idc.GetIdbPath())
-
-        context = zmq.Context()
-        zmq_socket = context.socket(zmq.PUB)
-        zmq_socket.setsockopt(zmq.LINGER, CONFIGURATION[ZMQ_TIMEOUT_MS])
-        zmq_socket.connect(connection_string)
+        
         topic = "0"  # dummy
-        time.sleep(CONFIGURATION[ZMQ_TIMEOUT_MS] / 1000.0)
-        zmq_socket.send_multipart([topic, json.dumps(json_message)])
-        zmq_socket.close()
+        g_zmq_socket.send_multipart([topic, json.dumps(json_message)])
     except zmq.ZMQBaseError:
-        traceback.print_exc()
+        if CONFIGURATION["debug"]:
+                traceback.print_exc()
+        raise Exception("Error in sending message in ZMQ socket")
 
 
 class RenameIDPHook(idaapi.IDP_Hooks):
@@ -163,13 +197,14 @@ class RenameIDPHook(idaapi.IDP_Hooks):
         idaapi.IDP_Hooks.__init__(self)
 
     def renamed(self, ea, new_name, local_name):
-        # event = "RenameIDPHook.renamed(ea = 0x%x, new_name = %s, local_name = %r)\n" % (ea, new_name, local_name)
-        # print event
+        if CONFIGURATION["debug"]:
+            print "RenameIDPHook.renamed(ea = 0x%x, new_name = %s, local_name = %r)\n" % (ea, new_name, local_name)
+
         if (g_hooks_enabled and
                 (new_name is not None) and
                 (len(new_name) > 0) and
                 (not idb_push_common.is_default_name(new_name))):
-            zmq_pub_json({'type': UpdateTypes.Name,
+            self.zmq_pub_json({'type': UpdateTypes.Name,
                           'address': ea,
                           'name': new_name})
 
@@ -181,9 +216,9 @@ class CommentIDBHook(idaapi.IDB_Hooks):
         idaapi.IDB_Hooks.__init__(self)
 
     def cmt_changed(self, ea, is_repeatable):
-        # event = "CommentIDBHook.cmt_changed(arg0 = 0x%x, is_repeatable = %s)" % (ea, is_repeatable)
-        # print event
-
+        if CONFIGURATION["debug"]:
+            print "CommentIDBHook.cmt_changed(arg0 = 0x%x, is_repeatable = %s)" % (ea, is_repeatable)
+        
         message = {'address': ea}
 
         if is_repeatable:
@@ -199,8 +234,8 @@ class CommentIDBHook(idaapi.IDB_Hooks):
         return idaapi.IDB_Hooks.cmt_changed(self, ea, is_repeatable)
 
     def area_cmt_changed(self, areas, area, comment, is_repeatable):
-        # event = "CommentIDBHook.area_cmt_changed(area_start = 0x%x, comment = %s)" % (area.startEA, comment)
-        # print event
+        if CONFIGURATION["debug"]:
+            print "CommentIDBHook.area_cmt_changed(area_start = 0x%x, comment = %s)" % (area.startEA, comment)
 
         ea = area.startEA
         message = {'address': ea}
@@ -218,8 +253,8 @@ class CommentIDBHook(idaapi.IDB_Hooks):
         return idaapi.IDB_Hooks.area_cmt_changed(self, areas, area, comment, is_repeatable)
 
     def extra_cmt_changed(self, ea, line_idx, cmt):
-        # event = "CommentIDBHook.extra_cmt_changed(ea = 0x%x, line_idx = %d, cmt = %s)" % (ea, line_idx, cmt)
-        # print event
+        if CONFIGURATION["debug"]:
+            print "CommentIDBHook.extra_cmt_changed(ea = 0x%x, line_idx = %d, cmt = %s)" % (ea, line_idx, cmt)
 
         message = {'address': ea, 'line': cmt}
 
@@ -230,7 +265,8 @@ class CommentIDBHook(idaapi.IDB_Hooks):
             message['type'] = UpdateTypes.PosteriorLine
             message['line_index'] = line_idx - idaapi.E_NEXT
         else:
-            print "WHAAAAAAT is the meaning of comment |%s| at address 0x%x at index %d?" % (cmt, ea, line_idx)
+            if CONFIGURATION["debug"]:
+                print "CommentIDBHook.extra_cmt_changed - unexpected line_idx"
             return idaapi.IDB_Hooks.extra_cmt_changed(self, ea, line_idx, cmt)
 
         if g_hooks_enabled and (message['line'] is not None) and (len(message['line']) > 0):
@@ -240,6 +276,8 @@ class CommentIDBHook(idaapi.IDB_Hooks):
 
 
 # globals
+# TODO: Deal with socket closing unexpectedly (Server throwing a RST, computer sleeping, etc.
+g_zmq_socket = None
 g_rename_hook = RenameIDPHook()
 g_comment_hook = CommentIDBHook()
 g_ui_hooks = None
@@ -327,6 +365,8 @@ def start():
 
     # test connectivity
     zmq_test_connectivity()
+    # open global socket
+    open_zmq_socket()
 
     if not g_rename_hook.hook():
         raise Exception("RenameIDPHook installation FAILED")
@@ -365,6 +405,7 @@ def _remove_hooks_and_stop_thread():
 
 
 def stop(reason=None):
+    close_zmq_socket()
     _remove_hooks_and_stop_thread()
 
     global g_form
@@ -504,8 +545,13 @@ def on_discard_button_clicked():
 
 
 def apply_update(row_index):
-    """
-    Returns True iff row was removed after applying.
+    """Applies the update from the IDB PUSH window at row_index
+
+    Args:
+        row_index (int): Index of the row to apply the update from
+
+    Returns:
+        bool: Whether applying the change was successful and the row was removed.
     """
     global g_hooks_enabled
     should_remove_row = True
@@ -754,7 +800,7 @@ class SendPointerFromContextMenu(idaapi.action_handler_t):
         idaapi.action_handler_t.__init__(self)
 
     def activate(self, ctx):
-        zmq_pub_json({'type': UpdateTypes.LookHere,
+        self.zmq_pub_json({'type': UpdateTypes.LookHere,
                       'address': idc.ScreenEA()})
         return 1
 
@@ -802,5 +848,6 @@ try:
         store_configuration()
 
 except:
-    print "ERROR while loading or creating the configuration file"
-    traceback.print_exc()
+    if CONFIGURATION["debug"]:
+        print "ERROR while loading or creating the configuration file"
+        traceback.print_exc()
