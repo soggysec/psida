@@ -183,6 +183,10 @@ def zmq_pub_json(json_message):
         
         topic = "0"  # dummy
         g_zmq_socket.send_multipart([topic, json.dumps(json_message)])
+
+        if CONFIGURATION["debug"]:
+            print "DEBUG - SendThread - Sent message\r\n%s" % pprint.pformat(json_message)
+
     except zmq.ZMQBaseError:
         if CONFIGURATION["debug"]:
                 traceback.print_exc()
@@ -201,9 +205,10 @@ class RenameIDPHook(idaapi.IDP_Hooks):
                 (new_name is not None) and
                 (len(new_name) > 0) and
                 (not idb_push_common.is_default_name(new_name))):
-            self.zmq_pub_json({'type': UpdateTypes.Name,
+            zmq_pub_json({'type': UpdateTypes.Name,
                           'address': ea,
-                          'name': new_name})
+                          'name': new_name,
+                          'local_name': local_name})
 
         return idaapi.IDP_Hooks.renamed(self, ea, new_name, local_name)
 
@@ -337,6 +342,10 @@ class ReceiveThread(QtCore.QThread):
                             message['project'] != os.path.basename(idc.GetIdbPath())):
                     # don't receive updates for other projects
                     continue
+
+                if CONFIGURATION["debug"]:
+                    print "DEBUG - ReceiveThread - Recieved message %s" % pprint.pformat(message)
+
                 update_form(message)
 
             except zmq.error.Again:
@@ -354,7 +363,7 @@ class ReceiveThread(QtCore.QThread):
 
 
 def start():
-    print "INFO - Configuration - " + pprint.pformat(CONFIGURATION)
+    print "INFO - Configuration - \r\n" + pprint.pformat(CONFIGURATION)
 
     # test connectivity
     zmq_test_connectivity()
@@ -561,7 +570,8 @@ def apply_update(row_index):
         if update_type == UpdateTypes.Name:
 
             name = update['name']
-            if not idb_push_common.set_name(address, name):
+            local_name = bool(update['local_name'])
+            if not idb_push_common.set_name(address, name, local_name):
                 print "ERROR - Update - Failed to name 0x%x as %s" % (address, name)
                 should_remove_row = False
 
@@ -790,7 +800,7 @@ class SendPointerFromContextMenu(idaapi.action_handler_t):
         idaapi.action_handler_t.__init__(self)
 
     def activate(self, ctx):
-        self.zmq_pub_json({'type': UpdateTypes.LookHere,
+        zmq_pub_json({'type': UpdateTypes.LookHere,
                       'address': idc.ScreenEA()})
         return 1
 
