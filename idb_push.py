@@ -6,6 +6,9 @@ import json
 import time
 from idaapi import PluginForm
 import idc
+import ida_struct
+import ida_frame
+import ida_nalt
 import random
 from socket import gethostbyname
 import pprint
@@ -15,14 +18,14 @@ from PyQt5 import QtGui, QtCore, QtWidgets
 try:
     import zmq
 except ImportError:
-    print "WARNING - Import - zmq not found, idb_push will not function properly"
+    print 'WARNING - Import - zmq not found, idb_push will not function properly'
     zmq = None
 
-CONTEXT_MENU_ACTION_NAME = "idb_push:send_address"
+CONTEXT_MENU_ACTION_NAME = 'idb_push:send_address'
 
-CONNECTION_STRING_FORMAT = r"tcp://%s:%d"
+CONNECTION_STRING_FORMAT = r'tcp://%s:%d'
 
-CONFIG_FILE_NAME = os.path.join(os.path.expandvars(r"%APPDATA%\Hex-Rays\IDA Pro"), r'idb_push.cfg')
+CONFIG_FILE_NAME = os.path.join(os.path.expandvars(r'%APPDATA%\Hex-Rays\IDA Pro'), r'idb_push.cfg')
 
 USER = 'user'
 BACKEND_HOSTNAME = 'backend_hostname'
@@ -42,11 +45,11 @@ CONFIGURATION = {
     ZMQ_TIMEOUT_MS: 100,
     ZMQ_CONNECTIVITY_TEST_TIMEOUT_MS: 1000,
     MAX_ITEMS_IN_LIST: 1000,
-    DEBUG: True
+    DEBUG: False
 }
     
 class UpdateTypes(object):
-    Name, Comment, RepeatableComment, AnteriorLine, PosteriorLine, LookHere = range(6)
+    Name, Comment, RepeatableComment, AnteriorLine, PosteriorLine, LookHere, StackVariableRenamed, StructMemberCreated, StructMemberRenamed = range(9)
 
 
 def store_configuration():
@@ -67,7 +70,8 @@ def configure(backend_hostname=None,
               timeout=None,
               connectivity_test_timeout=None,
               max_items=None,
-              user=None):
+              user=None,
+              debug=None):
     global CONFIGURATION
 
     # Try resolving the backend_hostname to IPv4.
@@ -85,7 +89,8 @@ def configure(backend_hostname=None,
                           timeout: ZMQ_TIMEOUT_MS,
                           connectivity_test_timeout: ZMQ_CONNECTIVITY_TEST_TIMEOUT_MS,
                           max_items: MAX_ITEMS_IN_LIST,
-                          user: USER}
+                          user: USER,
+                          debug: DEBUG}
 
     for (argument, name) in arguments_to_names.iteritems():
         if argument is None:
@@ -144,7 +149,7 @@ def zmq_test_connectivity():
             continue
 
     if not found_random_string:
-        raise Exception("ZMQ connectivity test failed!")
+        raise Exception('ZMQ connectivity test failed!')
 
 def open_zmq_socket():
     global g_zmq_socket
@@ -157,9 +162,9 @@ def open_zmq_socket():
                                                         CONFIGURATION[PUB_PORT])
         g_zmq_socket.connect(connection_string)
     except zmq.ZMQBaseError:
-        if CONFIGURATION["debug"]:
+        if CONFIGURATION['debug']:
             traceback.print_exc()
-        raise Exception("Error in creating ZMQ socket")
+        raise Exception('Error in creating ZMQ socket')
 
 def restart_zmq_socket():
     close_zmq_socket()
@@ -181,25 +186,32 @@ def zmq_pub_json(json_message):
         if 'project' not in json_message:
             json_message['project'] = os.path.basename(idc.GetIdbPath())
         
-        topic = "0"  # dummy
+        topic = '0'  # dummy
         g_zmq_socket.send_multipart([topic, json.dumps(json_message)])
 
-        if CONFIGURATION["debug"]:
-            print "DEBUG - SendThread - Sent message\r\n%s" % pprint.pformat(json_message)
+        if CONFIGURATION['debug']:
+            print 'DEBUG - SendThread - Sent message\r\n%s' % pprint.pformat(json_message)
 
     except zmq.ZMQBaseError:
-        if CONFIGURATION["debug"]:
+        if CONFIGURATION['debug']:
                 traceback.print_exc()
-        raise Exception("Error in sending message in ZMQ socket")
+        raise Exception('Error in sending message in ZMQ socket')
 
 
-class RenameIDPHook(idaapi.IDP_Hooks):
+class IDPHook(idaapi.IDP_Hooks):
     def __init__(self):
         idaapi.IDP_Hooks.__init__(self)
 
     def renamed(self, ea, new_name, local_name):
-        if CONFIGURATION["debug"]:
-            print "DEBUG - Hooks - RenameIDPHook.renamed(ea = 0x%x, new_name = %s, local_name = %r)\n" % (ea, new_name, local_name)
+        if CONFIGURATION['debug']:
+            print 'DEBUG - Hooks - RenameIDPHook.renamed(ea = 0x%x, new_name = %s, local_name = %r)' % (ea, new_name, local_name)
+
+
+        if ida_struct.is_member_id(ea):
+            # Change is either a built-in struct of a frame pointer, or some address starting with 0xFF00 that happens to be a member address.
+            # if CONFIGURATION['debug']:
+            print 'INFO - Hooks - RenameIDPHook - Skipping a possible stack variable/built-in struct change'
+            return idaapi.IDP_Hooks.renamed(self, ea, new_name, local_name)
 
         if (g_hooks_enabled and
                 (new_name is not None) and
@@ -213,13 +225,13 @@ class RenameIDPHook(idaapi.IDP_Hooks):
         return idaapi.IDP_Hooks.renamed(self, ea, new_name, local_name)
 
 
-class CommentIDBHook(idaapi.IDB_Hooks):
+class IDBHook(idaapi.IDB_Hooks):
     def __init__(self):
         idaapi.IDB_Hooks.__init__(self)
 
     def cmt_changed(self, ea, is_repeatable):
-        if CONFIGURATION["debug"]:
-            print "DEBUG - Hooks - CommentIDBHook.cmt_changed(arg0 = 0x%x, is_repeatable = %s)" % (ea, is_repeatable)
+        if CONFIGURATION['debug']:
+            print 'DEBUG - Hooks - CommentIDBHook.cmt_changed(arg0 = 0x%x, is_repeatable = %s)' % (ea, is_repeatable)
         
         message = {'address': ea}
 
@@ -236,8 +248,8 @@ class CommentIDBHook(idaapi.IDB_Hooks):
         return idaapi.IDB_Hooks.cmt_changed(self, ea, is_repeatable)
 
     def area_cmt_changed(self, areas, area, comment, is_repeatable):
-        if CONFIGURATION["debug"]:
-            print "DEBUG - Hooks - CommentIDBHook.area_cmt_changed(area_start = 0x%x, comment = %s)" % (area.startEA, comment)
+        if CONFIGURATION['debug']:
+            print 'DEBUG - Hooks - CommentIDBHook.area_cmt_changed(area_start = 0x%x, comment = %s)' % (area.startEA, comment)
 
         ea = area.startEA
         message = {'address': ea}
@@ -255,8 +267,8 @@ class CommentIDBHook(idaapi.IDB_Hooks):
         return idaapi.IDB_Hooks.area_cmt_changed(self, areas, area, comment, is_repeatable)
 
     def extra_cmt_changed(self, ea, line_idx, cmt):
-        if CONFIGURATION["debug"]:
-            print "DEBUG - Hooks - CommentIDBHook.extra_cmt_changed(ea = 0x%x, line_idx = %d, cmt = %s)" % (ea, line_idx, cmt)
+        if CONFIGURATION['debug']:
+            print 'DEBUG - Hooks - CommentIDBHook.extra_cmt_changed(ea = 0x%x, line_idx = %d, cmt = %s)' % (ea, line_idx, cmt)
 
         message = {'address': ea, 'line': cmt}
 
@@ -267,8 +279,8 @@ class CommentIDBHook(idaapi.IDB_Hooks):
             message['type'] = UpdateTypes.PosteriorLine
             message['line_index'] = line_idx - idaapi.E_NEXT
         else:
-            if CONFIGURATION["debug"]:
-                print "DEBUG - Hooks - CommentIDBHook.extra_cmt_changed - unexpected line_idx, continuing..."
+            if CONFIGURATION['debug']:
+                print 'DEBUG - Hooks - CommentIDBHook.extra_cmt_changed - unexpected line_idx, continuing...'
             return idaapi.IDB_Hooks.extra_cmt_changed(self, ea, line_idx, cmt)
 
         if g_hooks_enabled and (message['line'] is not None) and (len(message['line']) > 0):
@@ -276,12 +288,47 @@ class CommentIDBHook(idaapi.IDB_Hooks):
 
         return idaapi.IDB_Hooks.extra_cmt_changed(self, ea, line_idx, cmt)
 
+    def struc_member_created(self, sptr, mptr):
+        if CONFIGURATION['debug']:
+            print 'DEBUG - Hooks - StructIDBHook.struc_member_created(sptr = %s, mptr = %s)' % (pprint.pformat(sptr), pprint.pformat(mptr))
+
+        message = { 'type': UpdateTypes.StructMemberCreated,
+                    'name': ida_struct.get_member_name(mptr.id), 
+                    'address': ida_frame.get_func_by_frame(sptr.id),
+                    'offset': mptr.soff,
+                    'var_size': mptr.eoff - mptr.soff}
+
+        if sptr.props & 0x40: # Struct changed is a frame pointer
+            message['type'] = UpdateTypes.StackVariableRenamed
+
+        if g_hooks_enabled and (message['name'] is not None) and (len(message['name']) > 0):
+            zmq_pub_json(message)
+
+        return idaapi.IDB_Hooks.struc_member_created(self, sptr, mptr)
+
+    def struc_member_renamed(self, sptr, mptr):
+        if CONFIGURATION['debug']:
+            print 'DEBUG - Hooks - StructIDBHook.struc_member_renamed(sptr = %s, mptr = %s)' % (pprint.pformat(sptr), pprint.pformat(mptr))
+
+        message = { 'type': UpdateTypes.StructMemberRenamed,
+                    'name': ida_struct.get_member_name(mptr.id), 
+                    'address': ida_frame.get_func_by_frame(sptr.id),
+                    'offset': mptr.soff,
+                    'var_size': mptr.eoff - mptr.soff}
+
+        if sptr.props & 0x40: # Struct changed is a frame pointer
+            message['type'] = UpdateTypes.StackVariableRenamed
+        
+        if g_hooks_enabled and (message['name'] is not None) and (len(message['name']) > 0):
+            zmq_pub_json(message)   
+     
+        return idaapi.IDB_Hooks.struc_member_renamed(self, sptr, mptr)
 
 # globals
-# TODO: Deal with socket closing unexpectedly (Server throwing a RST, computer sleeping, etc.
+# TODO: Deal with socket closing unexpectedly (Server throwing a RST, computer sleeping, etc.)
 g_zmq_socket = None
-g_rename_hook = RenameIDPHook()
-g_comment_hook = CommentIDBHook()
+g_idp_hook = IDPHook()
+g_idb_hook = IDBHook()
 g_ui_hooks = None
 g_hooks_enabled = False
 g_receive_thread = None
@@ -289,12 +336,12 @@ g_item_list_mutex = None
 g_item_list_model = None
 g_item_list = None
 g_form = None
+
 # maps identifying properties of an update to the actual update object and its description
 # for anterior and posterior lines the identifier is the triplet
 # (address, update type, line index), for all other types it's
 # (address, update type)
 g_identifiers_to_updates = {}
-
 
 def get_identifier(update_json):
     update_type = update_json['type']
@@ -304,6 +351,9 @@ def get_identifier(update_json):
                        UpdateTypes.PosteriorLine]:
         return address, update_type, update_json['line_index']
 
+    elif update_type == UpdateTypes.StackVariableRenamed:
+        return address, update_type, update_json['offset']
+
     return address, update_type
 
 
@@ -311,13 +361,13 @@ class ReceiveThread(QtCore.QThread):
     def __init__(self):
         super(ReceiveThread, self).__init__()
         self._should_stop = False
-        self._connection_string = r"tcp://%s:%d" % (CONFIGURATION[BACKEND_HOSTNAME],
+        self._connection_string = r'tcp://%s:%d' % (CONFIGURATION[BACKEND_HOSTNAME],
                                                     CONFIGURATION[SUB_PORT])
         self._context = zmq.Context()
 
         self._socket = self._context.socket(zmq.SUB)
         self._socket.connect(self._connection_string)
-        self._socket.setsockopt(zmq.SUBSCRIBE, "")
+        self._socket.setsockopt(zmq.SUBSCRIBE, '')
         self._socket.RCVTIMEO = CONFIGURATION[ZMQ_TIMEOUT_MS]
 
     def signal_stop(self):
@@ -343,8 +393,8 @@ class ReceiveThread(QtCore.QThread):
                     # don't receive updates for other projects
                     continue
 
-                if CONFIGURATION["debug"]:
-                    print "DEBUG - ReceiveThread - Recieved message %s" % pprint.pformat(message)
+                if CONFIGURATION['debug']:
+                    print 'DEBUG - ReceiveThread - Recieved message %s' % pprint.pformat(message)
 
                 update_form(message)
 
@@ -358,23 +408,23 @@ class ReceiveThread(QtCore.QThread):
 
                 self._socket = self._context.socket(zmq.SUB)
                 self._socket.connect(self._connection_string)
-                self._socket.setsockopt(zmq.SUBSCRIBE, "")
+                self._socket.setsockopt(zmq.SUBSCRIBE, '')
                 self._socket.RCVTIMEO = CONFIGURATION[ZMQ_TIMEOUT_MS]
 
 
 def start():
-    print "INFO - Configuration - \r\n" + pprint.pformat(CONFIGURATION)
+    print 'INFO - Configuration - \r\n' + pprint.pformat(CONFIGURATION)
 
     # test connectivity
     zmq_test_connectivity()
     # open global socket
     open_zmq_socket()
 
-    if not g_rename_hook.hook():
-        raise Exception("RenameIDPHook installation FAILED")
+    if not g_idp_hook.hook():
+        raise Exception('RenameIDPHook installation FAILED')
 
-    if not g_comment_hook.hook():
-        raise Exception("CommentIDBHook installation FAILED")
+    if not g_idb_hook.hook():
+        raise Exception('CommentIDBHook installation FAILED')
 
     global g_hooks_enabled
     g_hooks_enabled = True
@@ -385,7 +435,7 @@ def start():
 
     global g_form
     g_form = IDBPushForm()
-    g_form.Show("IDB PUSH")
+    g_form.Show('IDB PUSH')
 
     install_ui_hooks()
 
@@ -396,8 +446,8 @@ def start():
 def _remove_hooks_and_stop_thread():
     global g_hooks_enabled
     g_hooks_enabled = False
-    g_rename_hook.unhook()
-    g_comment_hook.unhook()
+    g_idp_hook.unhook()
+    g_idb_hook.unhook()
 
     global g_receive_thread
     if g_receive_thread is not None:
@@ -405,6 +455,9 @@ def _remove_hooks_and_stop_thread():
 
     uninstall_ui_hooks()
 
+def restart():
+    stop()
+    start()
 
 def stop(reason=None):
     close_zmq_socket()
@@ -492,7 +545,7 @@ def on_go_to_address_button_clicked():
 
         indices = g_item_list.selectedIndexes()
         if len(indices) != 1:
-            print "ERROR - UI - Can't go to more than one update at once"
+            print 'ERROR - UI - Can\'t go to more than one update at once'
             return
 
         index = indices[0].row()
@@ -572,7 +625,7 @@ def apply_update(row_index):
             name = update['name']
             local_name = bool(update['local_name'])
             if not idb_push_common.set_name(address, name, local_name):
-                print "ERROR - Update - Failed to name 0x%x as %s" % (address, name)
+                print 'ERROR - Update - Failed to name 0x%x as %s' % (address, name)
                 should_remove_row = False
 
         elif update_type == UpdateTypes.Comment:
@@ -602,7 +655,7 @@ def apply_update(row_index):
             for i in xrange(0, line_index):
                 line = idc.LineB(address, i)
                 if line is None or len(line) == 0:
-                    idc.ExtLinB(address, i, " ")
+                    idc.ExtLinB(address, i, ' ')
 
             idc.ExtLinB(address, line_index, update['line'])
 
@@ -610,9 +663,18 @@ def apply_update(row_index):
             idc.Jump(address)
             should_remove_row = False
 
+        elif update_type == UpdateTypes.StackVariableRenamed:
+            sptr = update['sptr']
+            offset = update['offset']
+            name = update['name']
+            if update['new']:
+                ida_struct.add_struc_member(sptr, name, offset, 0, ida_nalt.opinfo_t(), update['var_size'])
+            else:
+                ida_struct.set_member_name(sptr, offset, name)
+
         else:
-            if CONFIGURATION["debug"]:
-                print "DEBUG - Update - Unrecognized type %d: update %s" % (update_type, update)
+            if CONFIGURATION['debug']:
+                print 'DEBUG - Update - Unrecognized type %d: update %s' % (update_type, update)
             return
 
         if should_remove_row:
@@ -630,6 +692,7 @@ def apply_update(row_index):
 
 
 def on_item_list_double_clicked(index):
+    """Calling an update whenever an item on the UI list is double clicked. """
     try:
         g_item_list_mutex.lock()
         row_index = index.row()
@@ -642,6 +705,15 @@ def on_item_list_double_clicked(index):
 
 
 def add_item(message, description):
+    """Adds a new item to the UI list.
+    Updates the item if the unique identifier tuple already exists in the list.
+    Deletes the oldest entries if the list exceeds @MAX_ITEMS_IN_LIST
+
+    Args:
+        message (dict) - The data to be connected to the item in the UI list.
+        description (str) - The string to display on the list.
+
+    """
     try:
         g_item_list_mutex.lock()
         # make sure we don't have the same type of update to the
@@ -662,7 +734,7 @@ def add_item(message, description):
         item.setToolTip(description)
 
         if g_item_list_model.rowCount() >= CONFIGURATION[MAX_ITEMS_IN_LIST]:
-            print "INFO - UI - Limit of %d items reached - removing oldest entry" % CONFIGURATION[MAX_ITEMS_IN_LIST]
+            print 'INFO - UI - Limit of %d items reached - removing oldest entry' % CONFIGURATION[MAX_ITEMS_IN_LIST]
             doomed_update = g_item_list_model.item(0).data()
 
             g_item_list_model.removeRow(0)
@@ -680,6 +752,12 @@ def add_item(message, description):
 
 
 def update_form(message):
+    """ Processes a new coming update by building a relevant description 
+        depending on the message type and adding it to the list.
+
+    Args:
+        message (dict) - The message received from the ZMQ server
+    """
     try:
         g_item_list_mutex.lock()
         message_type = message['type']
@@ -690,13 +768,12 @@ def update_form(message):
             current_name = idb_push_common.get_non_default_name(address)
 
             if current_name == new_name:
-                # not an update
                 return
 
             if current_name is not None:
-                description = "Name [0x%x]: %s (YOURS: %s)" % (address, new_name, current_name)
+                description = 'Name [0x%x]: %s (YOURS: %s)' % (address, new_name, current_name)
             else:
-                description = "Name [0x%x]: %s" % (address, new_name)
+                description = 'Name [0x%x]: %s' % (address, new_name)
             add_item(message, description)
 
         elif message_type == UpdateTypes.Comment:
@@ -707,9 +784,9 @@ def update_form(message):
                 return
 
             if (current_comment is not None) and (len(current_comment) > 0):
-                description = "Comment [0x%x]: %s\n(YOURS: %s)" % (address, new_comment, current_comment)
+                description = 'Comment [0x%x]: %s\n(YOURS: %s)' % (address, new_comment, current_comment)
             else:
-                description = "Comment [0x%x]: %s" % (address, new_comment)
+                description = 'Comment [0x%x]: %s' % (address, new_comment)
             add_item(message, description)
 
         elif message_type == UpdateTypes.RepeatableComment:
@@ -720,9 +797,9 @@ def update_form(message):
                 return
 
             if (current_comment is not None) and (len(current_comment) > 0):
-                description = "RComment [0x%x]: %s\n(YOURS: %s)" % (address, new_comment, current_comment)
+                description = 'RComment [0x%x]: %s\n(YOURS: %s)' % (address, new_comment, current_comment)
             else:
-                description = "RComment [0x%x]: %s" % (address, new_comment)
+                description = 'RComment [0x%x]: %s' % (address, new_comment)
             add_item(message, description)
 
         elif message_type == UpdateTypes.AnteriorLine:
@@ -734,9 +811,9 @@ def update_form(message):
                 return
 
             if (current_line is not None) and (len(current_line) > 0):
-                description = "AntLine [0x%x] [%d]: %s\n(YOURS: %s)" % (address, line_index, new_line, current_line)
+                description = 'AntLine [0x%x] [%d]: %s\n(YOURS: %s)' % (address, line_index, new_line, current_line)
             else:
-                description = "AntLine [0x%x] [%d]: %s" % (address, line_index, new_line)
+                description = 'AntLine [0x%x] [%d]: %s' % (address, line_index, new_line)
             add_item(message, description)
 
         elif message_type == UpdateTypes.PosteriorLine:
@@ -748,9 +825,9 @@ def update_form(message):
                 return
 
             if (current_line is not None) and (len(current_line) > 0):
-                description = "PostLine [0x%x] [%d]: %s\n(YOURS: %s)" % (address, line_index, new_line, current_line)
+                description = 'PostLine [0x%x] [%d]: %s\n(YOURS: %s)' % (address, line_index, new_line, current_line)
             else:
-                description = "PostLine [0x%x] [%d]: %s" % (address, line_index, new_line)
+                description = 'PostLine [0x%x] [%d]: %s' % (address, line_index, new_line)
             add_item(message, description)
 
         elif message_type == UpdateTypes.LookHere:
@@ -758,15 +835,42 @@ def update_form(message):
             current_name = idb_push_common.get_non_default_name(address)
 
             if current_name is not None:
-                description = "%s: look at 0x%x (YOUR NAME: %s)" % (user, address, current_name)
+                description = '%s: look at 0x%x (YOUR NAME: %s)' % (user, address, current_name)
             else:
-                description = "%s: look at 0x%x" % (user, address)
+                description = '%s: look at 0x%x' % (user, address)
 
             add_item(message, description)
 
+        elif message_type == UpdateTypes.StackVariableRenamed:
+
+            func_ea = message['address']
+            func_frame = ida_frame.get_frame(func_ea)
+            message['sptr'] = func_frame
+            member = ida_struct.get_member(func_frame, message['offset'])
+            current_name = None
+            if member is not None:
+                current_name = ida_struct.get_member_name(member.id)
+            new_name = message['name']
+
+            if new_name == current_name:
+                return
+
+            if (current_name is not None):
+                message['new'] = False
+                description = 'StackVar [At Func: 0x%x]: %s\n(YOURS: %s)' % (func_ea, new_name, current_name)
+            else:
+                message['new'] = True
+                description = 'StackVar [At Func: 0x%x]: %s\n(At offset: 0x%x)' % (func_ea, new_name, message['offset'])
+
+            add_item(message, description)
+
+        elif message_type == UpdateTypes.StructMemberRenamed or message_type == UpdateTypes.StructMemberCreated:
+            if CONFIGURATION['debug']:
+                print 'DEBUG - UI - Unimplemented message sent: %s' % (message_type)
+
         else:
-            if CONFIGURATION["debug"]:
-                print "DEBUG - UI - Unrecognized type %d: in message %s" % (message_type, str(message))
+            if CONFIGURATION['debug']:
+                print 'DEBUG - UI - Unrecognized type %d: in message %s' % (message_type, str(message))
     except:
         traceback.print_exc()
 
@@ -817,14 +921,14 @@ class IDBPushUIHooks(idaapi.UI_Hooks):
 def install_ui_hooks():
     if not idaapi.register_action(idaapi.action_desc_t(
             CONTEXT_MENU_ACTION_NAME,  # must be unique
-            "Send address via IDB Push",
+            'Send address via IDB Push',
             SendPointerFromContextMenu())):
-        raise Exception("Failed to register action")
+        raise Exception('Failed to register action')
 
     global g_ui_hooks
     g_ui_hooks = IDBPushUIHooks()
     if not g_ui_hooks.hook():
-        raise Exception("Failed to install UI hook")
+        raise Exception('Failed to install UI hook')
 
 
 def uninstall_ui_hooks():
@@ -848,6 +952,6 @@ try:
         store_configuration()
 
 except:
-    if CONFIGURATION["debug"]:
-        print "ERROR - Configuration - Couldn't load or create the configuration file"
+    if CONFIGURATION['debug']:
+        print 'ERROR - Configuration - Couldn\'t load or create the configuration file'
         traceback.print_exc()

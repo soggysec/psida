@@ -151,8 +151,6 @@ def set_name(address, new_name, local):
         return False
 
     if local:
-        print "Setting local name"
         return idc.MakeNameEx(address, new_name, idc.SN_LOCAL)
 
-    print "Setting global name"
     return idc.MakeName(address, new_name)
