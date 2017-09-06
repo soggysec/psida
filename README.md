@@ -26,13 +26,13 @@ In order to use PSIDA you need to:
 
     3.1. Create a back-end server and:
 
-       - Install zmq ("pip install pyzmq" should do the trick).
+       - Install zmq (`pip install pyzmq` should do the trick).
 
        - Install zmq_forwarder as a Windows service; starting it (via services.msc) and setting it as Automatic is probably a good idea.
 
     3.2. On every local host:
 
-       - Install zmq ("pip install pyzmq" should do the trick).
+       - Install zmq (`pip install pyzmq` should do the trick).
 
        - Copy psida_plugin.py into your IDA 6.9/plugins/ folder.
 
@@ -45,7 +45,7 @@ Usage
 ------------
 idb_pickle (offline): 
 
- - Call `import psida` in the Python console, and then `psida.idb_pickle.pickle(<>)` to store your progress to a file and "idb_pickle.unpickle(<>)" to load it.
+ - Call `import psida` in the Python console, and then `psida.idb_pickle.pickle(<>)` to store your progress to a file and `idb_pickle.unpickle(<>)` to load it.
 
 idb_push (online): 
 
