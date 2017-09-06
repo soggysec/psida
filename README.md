@@ -45,14 +45,22 @@ At this point PSIDA supports only IDA 6.9. It can be made to work on IDA 6.8 (an
 
 Usage
 ------------
-idb_pickle (offline): `import psida` in the Python console, and then `psida.idb_pickle.pickle(<>)` to store your progress to a file and "idb_pickle.unpickle(<>)" to load it.
+idb_pickle (offline): 
+
+    - `import psida` in the Python console, and then `psida.idb_pickle.pickle(<>)` to store your progress to a file and "idb_pickle.unpickle(<>)" to load it.
 
 idb_push (online): 
- - First time only: In the Python console call `import psida`, and then `idb_push.configure(backend_hostname='<your server hostname or IP here>')`.
+
+ - First time only: In the Python console call `import psida`, and then `psida.idb_push.configure(backend_hostname='<your server hostname or IP here>')`.
+
  - Press Ctrl+Shift+P. The IDB_PUSH window will appear.
+
 Inside the IDB_PUSH tab you have several shortcuts:
+
  - Backspace or Delete discards the selected updates
+
  - Enter (including the numpad enter) applies the selected updates, as does double clicking an update
+
  - Space goes to the address of the selected update (only if a single update is selected)
 
 
