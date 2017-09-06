@@ -168,7 +168,6 @@ def open_zmq_socket():
 
 def restart_zmq_socket():
     close_zmq_socket()
-    print "rrestarted"
     open_zmq_socket()
 
 def close_zmq_socket():
