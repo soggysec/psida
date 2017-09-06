@@ -7,7 +7,7 @@ At this point, PSIDA focuses on collaborative reverse engineering in two models:
  - offline/idb_pickle: you pick up the work at the point your coworker(s) stopped, so you use PSIDA to import the progress made while you were gone
  - online/idb_push: you and your team reverse a binary in parallel and use PSIDA to automatically push notifications about your progress
 
-"Progress" at this point means comments and function names; idb_push sends your updates to everyone working on an IDB with the same name (and connected to the same server, naturally).
+"Progress" at this point means comments, function names, variable names and address names; idb_push sends your updates to everyone working on an IDB with the same name (and connected to the same server, naturally).
  
 Internally, idb_pickle is built on IDAPython, while idb_push additionally uses ZeroMQ for communications.
 
@@ -18,21 +18,23 @@ In order to use PSIDA you need to:
 
 0. Have a 32-bit Python for IDAPython.
 
-1. Copy idb_push_common.py, idb_pickle.py and idb_push.py into your IDA 6.9/python/ folder.
+1. Make sure the psida directory is in your PYTHONPATH
 
 2. Either copy idapythonrc.py into "%APPDATA%\Hex-Rays\IDA Pro" or (if you already have an idapythonrc.py) add "from PyQt5 import QtGui, QtCore, QtWidgets" to it.
 
-3. To use idb_push you also need to:
+3. To use the online feature you also need to:
 
     3.1. Create a back-end server and:
         3.1.1. Install zmq ("pip install pyzmq" should do the trick).
 
         3.1.2. Install zmq_forwarder as a Windows service; starting it (via services.msc) and setting it as Automatic is probably a good idea.
 
-	3.2. On every local host:
-        3.2.1. Install zmq ("pip install pyzmq" should do the trick).
+    3.2. On every local host:
+        3.2.1. Copy psida_plugin.py into your IDA 6.9/plugins/ folder.
+
+        3.2.2. Install zmq ("pip install pyzmq" should do the trick).
         
-        3.2.2. Set the back-end host name via idb_push.configure(backend_hostname='your_backend_hostname_or_ip'); this setting is permanently saved in idb_push.cfg.
+        3.2.3. Set the back-end host name via `import psida; psida.configure(backend_hostname='your_backend_hostname_or_ip');` this setting is permanently saved in idb_push.cfg.
 
 
 At this point PSIDA supports only IDA 6.9. It can be made to work on IDA 6.8 (and probably earlier versions), but it's tricky and requires (at least) a recompiled version of the IDAPython plugin that exposes the necessary functions.
@@ -41,9 +43,11 @@ At this point PSIDA supports only IDA 6.9. It can be made to work on IDA 6.8 (an
 
 Usage
 ------------
-idb_pickle: "import idb_pickle" in the Python console, and then "idb_pickle.pickle(<>)" to store your progress to a file and "idb_pickle.unpickle(<>)" to load it.
+idb_pickle (offline): `import psida` in the Python console, and then `psida.idb_pickle.pickle(<>)` to store your progress to a file and "idb_pickle.unpickle(<>)" to load it.
 
-idb_push: "import idb_push", then ("idb_push.configure(<>)" if you need to, and then) "idb_push.start()"; calling "idb_push.stop()" will close the IDB_PUSH tab.
+idb_push (online): 
+ - First time only: In the Python console call `import psida`, and then `idb_push.configure(backend_hostname='<your server hostname or IP here>')`.
+ - Press Ctrl+Shift+P. The IDB_PUSH window will appear.
 Inside the IDB_PUSH tab you have several shortcuts:
  - Backspace or Delete discards the selected updates
  - Enter (including the numpad enter) applies the selected updates, as does double clicking an update
