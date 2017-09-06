@@ -101,7 +101,7 @@ def configure(backend_hostname=None,
 
 
 def zmq_test_connectivity():
-    """Creates global socket and tests server connectivity"""
+    """Creates a temporary ZMQ socket and tests server connectivity"""
 
     pub_connection_string = r"tcp://%s:%d" % (CONFIGURATION[BACKEND_HOSTNAME],
                                               CONFIGURATION[PUB_PORT])
@@ -168,6 +168,7 @@ def open_zmq_socket():
 
 def restart_zmq_socket():
     close_zmq_socket()
+    print "rrestarted"
     open_zmq_socket()
 
 def close_zmq_socket():
@@ -176,6 +177,7 @@ def close_zmq_socket():
         g_zmq_socket.close()
     except:
         pass
+    del g_zmq_socket
     g_zmq_socket = None
 
 def zmq_pub_json(json_message):
@@ -664,13 +666,13 @@ def apply_update(row_index):
             should_remove_row = False
 
         elif update_type == UpdateTypes.StackVariableRenamed:
-            sptr = update['sptr']
+            func_frame = update['func_frame_ptr']
             offset = update['offset']
             name = update['name']
             if update['new']:
-                ida_struct.add_struc_member(sptr, name, offset, 0, ida_nalt.opinfo_t(), update['var_size'])
+                ida_struct.add_struc_member(func_frame, name, offset, 0, ida_nalt.opinfo_t(), update['var_size'])
             else:
-                ida_struct.set_member_name(sptr, offset, name)
+                ida_struct.set_member_name(func_frame, offset, name)
 
         else:
             if CONFIGURATION['debug']:
@@ -845,7 +847,7 @@ def update_form(message):
 
             func_ea = message['address']
             func_frame = ida_frame.get_frame(func_ea)
-            message['sptr'] = func_frame
+            message['func_frame_ptr'] = func_frame
             member = ida_struct.get_member(func_frame, message['offset'])
             current_name = None
             if member is not None:
@@ -952,6 +954,6 @@ try:
         store_configuration()
 
 except:
+    print 'ERROR - Configuration - Couldn\'t load or create the configuration file'
     if CONFIGURATION['debug']:
-        print 'ERROR - Configuration - Couldn\'t load or create the configuration file'
         traceback.print_exc()
