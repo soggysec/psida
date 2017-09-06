@@ -25,11 +25,13 @@ In order to use PSIDA you need to:
 3. To use the online feature you also need to:
 
     3.1. Create a back-end server and:
+
        - Install zmq ("pip install pyzmq" should do the trick).
 
        - Install zmq_forwarder as a Windows service; starting it (via services.msc) and setting it as Automatic is probably a good idea.
 
     3.2. On every local host:
+
        - Copy psida_plugin.py into your IDA 6.9/plugins/ folder.
 
        - Install zmq ("pip install pyzmq" should do the trick).
