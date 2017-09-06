@@ -1,12 +1,13 @@
 import idaapi
+import socket
 
 class psida_Plugin(idaapi.plugin_t):
     flags = None
-    comment = "Some comment"
-    help = """  Press Ctrl+Shift+P to start the plugin.
+    comment = """  Press Ctrl+Shift+P to start the plugin.
                 Troubleshooting:
                     - Make sure psida's directory is in your PYTHONPATH
                     - Run `import psida; psida.configure(backend_hostname='<your backend server or IP>')`"""
+    help = str(comment)
     wanted_name = "psIDA v0.2"
     wanted_hotkey = "Ctrl-Shift-P"
     imported = False
@@ -29,15 +30,27 @@ class psida_Plugin(idaapi.plugin_t):
         
     def run(self, arg):
         if self.imported:
+
             if not self.psida_module.idb_push.CONFIGURATION["backend_hostname"]:
-                idaapi.msg("Backend hostname is not initialied, run `import psida; psida.configure(backend_hostname='<your backend server or IP>')` to configure it\n")
-                return
+                connected = False
+                while not connected:
+                    backend_hostname = idc.AskStr("Hostname or IP", "Backend not initialzied, input your backend's name or IP:")
+                    try:
+                        self.psida_module.idb_push.configure(backend_hostname=backend_hostname)
+                        # test connectivity
+                        self.psida_module.idb_push.zmq_test_connectivity()
+                        connected = True
+                    except self.psida_module.idb_push.ZMQConnectionException:
+                        idaapi.msg("ERROR - Run - ZMQ Connectivity failed, make sure your server is set-up correctly.\n")
+                    except socket.gaierror:
+                        idaapi.msg("ERROR - Run - Could not resolve server name. Make sure it's spelled correctly, and that you get DNS responses from it\n")
+
             if self.running:
                 self.psida_module.idb_push.stop()
                 if self.psida_module.idb_push.CONFIGURATION["debug"]:
                     idaapi.msg("DEBUG - Run - idb_push already running, stopping...\n")
-            self.psida_module.idb_push.start()
 
+            self.psida_module.idb_push.start()
             if self.psida_module.idb_push.CONFIGURATION["debug"]:
                 idaapi.msg("DEBUG - Run - Successfully started idb_push\n")
             self.running = True

@@ -32,11 +32,9 @@ In order to use PSIDA you need to:
 
     3.2. On every local host:
 
-       - Copy psida_plugin.py into your IDA 6.9/plugins/ folder.
-
        - Install zmq ("pip install pyzmq" should do the trick).
-        
-       - Set the back-end host name via `import psida; psida.configure(backend_hostname='your_backend_hostname_or_ip');` this setting is permanently saved in idb_push.cfg.
+
+       - Copy psida_plugin.py into your IDA 6.9/plugins/ folder.
 
 
 At this point PSIDA supports only IDA 6.9. It can be made to work on IDA 6.8 (and probably earlier versions), but it's tricky and requires (at least) a recompiled version of the IDAPython plugin that exposes the necessary functions.
@@ -51,9 +49,7 @@ idb_pickle (offline):
 
 idb_push (online): 
 
- - First time only: In the Python console call `import psida`, and then `psida.idb_push.configure(backend_hostname='<your server hostname or IP here>')`.
-
- - Press Ctrl+Shift+P. The IDB_PUSH window will appear.
+ - Press Ctrl+Shift+P. The IDB_PUSH window will appear. (At the first run, you will be asked to input your backend hostname or IP address)
 
 Inside the IDB_PUSH tab you have several shortcuts:
 

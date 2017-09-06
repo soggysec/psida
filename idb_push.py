@@ -99,7 +99,9 @@ def configure(backend_hostname=None,
 
     store_configuration()
 
-
+class ZMQConnectionException(BaseException):
+    pass
+    
 def zmq_test_connectivity():
     """Creates a temporary ZMQ socket and tests server connectivity"""
 
@@ -149,7 +151,7 @@ def zmq_test_connectivity():
             continue
 
     if not found_random_string:
-        raise Exception('ZMQ connectivity test failed!')
+        raise ZMQConnectionException('ZMQ connectivity test failed!')
 
 def open_zmq_socket():
     global g_zmq_socket
