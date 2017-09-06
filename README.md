@@ -47,7 +47,7 @@ Usage
 ------------
 idb_pickle (offline): 
 
-    - `import psida` in the Python console, and then `psida.idb_pickle.pickle(<>)` to store your progress to a file and "idb_pickle.unpickle(<>)" to load it.
+ - Call `import psida` in the Python console, and then `psida.idb_pickle.pickle(<>)` to store your progress to a file and "idb_pickle.unpickle(<>)" to load it.
 
 idb_push (online): 
 
