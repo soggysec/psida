@@ -63,7 +63,7 @@ Inside the IDB_PUSH tab you have several shortcuts:
 
 Known Issues
 ------------
-1. Can't connect to the backend server running zmq_forwarder.py: ZMQ currently doesn't support IPv6, and some hostname lookups return IPv6 by default; to work around the issue set the back-end hostname to the IPv4 addresses of the server via idb_push.configure(backend_hostname='<your backend IP>').
+1. Can't connect to the backend server running zmq_forwarder.py: ZMQ currently doesn't support IPv6, and some hostname lookups return IPv6 by default; to work around the issue set the back-end hostname to the IPv4 addresses of the server via psida.idb_push.configure(backend_hostname='<your backend IP>').
 
 2. IDA freezes occasionally when closing; AFAIK this doesn't have any adverse effect.
 

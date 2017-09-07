@@ -1,6 +1,6 @@
 import os
 import idaapi
-import idb_push_common
+import psida_common
 import traceback
 import json
 import time
@@ -219,7 +219,7 @@ class IDPHook(idaapi.IDP_Hooks):
         if (g_hooks_enabled and
                 (new_name is not None) and
                 (len(new_name) > 0) and
-                (not idb_push_common.is_default_name(new_name))):
+                (not psida_common.is_default_name(new_name))):
             zmq_pub_json({'type': UpdateTypes.Name,
                           'address': ea,
                           'name': new_name,
@@ -240,10 +240,10 @@ class IDBHook(idaapi.IDB_Hooks):
 
         if is_repeatable:
             message['type'] = UpdateTypes.RepeatableComment
-            message['comment'] = idb_push_common.get_repeated_comment(ea)
+            message['comment'] = psida_common.get_repeated_comment(ea)
         else:
             message['type'] = UpdateTypes.Comment
-            message['comment'] = idb_push_common.get_comment(ea)
+            message['comment'] = psida_common.get_comment(ea)
 
         if g_hooks_enabled and (message['comment'] is not None) and (len(message['comment']) > 0):
             zmq_pub_json(message)
@@ -259,10 +259,10 @@ class IDBHook(idaapi.IDB_Hooks):
 
         if is_repeatable:
             message['type'] = UpdateTypes.RepeatableComment
-            message['comment'] = idb_push_common.get_repeated_comment(ea)
+            message['comment'] = psida_common.get_repeated_comment(ea)
         else:
             message['type'] = UpdateTypes.Comment
-            message['comment'] = idb_push_common.get_comment(ea)
+            message['comment'] = psida_common.get_comment(ea)
 
         if g_hooks_enabled and (message['comment'] is not None) and (len(message['comment']) > 0):
             zmq_pub_json(message)
@@ -386,7 +386,7 @@ class ReceiveThread(QtCore.QThread):
                 if message is None or len(message) == 0:
                     continue
 
-                message = idb_push_common.convert_struct_to_utf8(message)
+                message = psida_common.convert_struct_to_utf8(message)
 
                 if 'user' not in message or message['user'] == CONFIGURATION[USER]:
                     # don't receive your own updates
@@ -619,7 +619,7 @@ def apply_update(row_index):
         g_hooks_enabled = False
         # apply update
         update = g_item_list_model.item(row_index).data()
-        update = idb_push_common.convert_struct_to_utf8(update)
+        update = psida_common.convert_struct_to_utf8(update)
         update_type = update['type']
         address = update['address']
 
@@ -627,17 +627,17 @@ def apply_update(row_index):
 
             name = update['name']
             local_name = bool(update['local_name'])
-            if not idb_push_common.set_name(address, name, local_name):
+            if not psida_common.set_name(address, name, local_name):
                 print 'ERROR - Update - Failed to name 0x%x as %s' % (address, name)
                 should_remove_row = False
 
         elif update_type == UpdateTypes.Comment:
             comment = update['comment']
-            idb_push_common.set_comment(address, comment)
+            psida_common.set_comment(address, comment)
 
         elif update_type == UpdateTypes.RepeatableComment:
             comment = update['comment']
-            idb_push_common.set_repeated_comment(address, comment)
+            psida_common.set_repeated_comment(address, comment)
 
         elif update_type == UpdateTypes.AnteriorLine:
             line_index = update['line_index']
@@ -768,7 +768,7 @@ def update_form(message):
 
         if message_type == UpdateTypes.Name:
             new_name = message['name']
-            current_name = idb_push_common.get_non_default_name(address)
+            current_name = psida_common.get_non_default_name(address)
 
             if current_name == new_name:
                 return
@@ -781,7 +781,7 @@ def update_form(message):
 
         elif message_type == UpdateTypes.Comment:
             new_comment = message['comment']
-            current_comment = idb_push_common.get_comment(address)
+            current_comment = psida_common.get_comment(address)
 
             if current_comment == new_comment:
                 return
@@ -794,7 +794,7 @@ def update_form(message):
 
         elif message_type == UpdateTypes.RepeatableComment:
             new_comment = message['comment']
-            current_comment = idb_push_common.get_repeated_comment(address)
+            current_comment = psida_common.get_repeated_comment(address)
 
             if current_comment == new_comment:
                 return
@@ -835,7 +835,7 @@ def update_form(message):
 
         elif message_type == UpdateTypes.LookHere:
             user = message['user']
-            current_name = idb_push_common.get_non_default_name(address)
+            current_name = psida_common.get_non_default_name(address)
 
             if current_name is not None:
                 description = '%s: look at 0x%x (YOUR NAME: %s)' % (user, address, current_name)
