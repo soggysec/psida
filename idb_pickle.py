@@ -1,6 +1,6 @@
 import cPickle
 import time
-import idb_push_common
+import psida_common
 import idb_push
 import idc
 import idaapi
@@ -37,11 +37,11 @@ def get_names():
     """
     names_dictionary = {}
 
-    segments = idb_push_common.get_segments()
+    segments = psida_common.get_segments()
     for _, address, end_address in segments:
 
         while address < end_address:
-            name = idb_push_common.get_non_default_name(address)
+            name = psida_common.get_non_default_name(address)
             if name is not None:
                 names_dictionary[address] = name
             address += idc.ItemSize(address)
@@ -57,7 +57,7 @@ def get_function_names():
     names_dictionary = {}
 
     for address in idautils.Functions():
-        name = idb_push_common.get_non_default_name(address)
+        name = psida_common.get_non_default_name(address)
         if name is not None:
             names_dictionary[address] = name
 
@@ -72,8 +72,8 @@ def get_function_comments():
     comments = {}
 
     for address in idautils.Functions():
-        normal_comment = idb_push_common.get_comment(address)
-        repeated_comment = idb_push_common.get_repeated_comment(address)
+        normal_comment = psida_common.get_comment(address)
+        repeated_comment = psida_common.get_repeated_comment(address)
         anterior_lines = get_anterior_lines(address)
         posterior_lines = get_posterior_lines(address)
 
@@ -86,11 +86,11 @@ def get_function_comments():
 
 def set_names(names_dictionary, overwrite=False, conflicts=None):
     for address, new_name in names_dictionary.iteritems():
-        current_name = idb_push_common.get_non_default_name(address)
+        current_name = psida_common.get_non_default_name(address)
         if new_name == current_name:
             continue
         elif overwrite or current_name is None:
-            if not idb_push_common.set_name(address, new_name):
+            if not psida_common.set_name(address, new_name):
                 print "Failed to set name %s to address %s" % (new_name, hex(address))
         else:
             if conflicts is None:
@@ -151,11 +151,11 @@ def get_all_comments():
     """
     comments = {}
 
-    segments_set = idb_push_common.get_segments()
+    segments_set = psida_common.get_segments()
     for _, address, end_address in segments_set:
         while address < end_address:
-            normal_comment = idb_push_common.get_comment(address)
-            repeated_comment = idb_push_common.get_repeated_comment(address)
+            normal_comment = psida_common.get_comment(address)
+            repeated_comment = psida_common.get_repeated_comment(address)
             anterior_lines = get_anterior_lines(address)
             posterior_lines = get_posterior_lines(address)
 
@@ -198,16 +198,16 @@ def set_all_comments(comments_dictionary, overwrite=False, conflicts=None):
     __set_comments(comments_dictionary,
                    overwrite,
                    0,
-                   idb_push_common.get_comment,
-                   idb_push_common.set_comment,
+                   psida_common.get_comment,
+                   psida_common.set_comment,
                    "Normal comment conflict at %s: NEW: %s CURRENT: %s",
                    conflicts)
 
     __set_comments(comments_dictionary,
                    overwrite,
                    1,
-                   idb_push_common.get_repeated_comment,
-                   idb_push_common.set_repeated_comment,
+                   psida_common.get_repeated_comment,
+                   psida_common.set_repeated_comment,
                    "Repeated comment conflict at %s: NEW: %s CURRENT: %s",
                    conflicts)
 
@@ -242,7 +242,7 @@ def pickle(destination_file=None, functions_only=False):
 
     print "Started pickling at %s" % (time.ctime())
     idb_data = {INPUT_FILE_MD5_FIELD: idc.GetInputMD5(),
-                SEGMENTS: idb_push_common.get_segments(),
+                SEGMENTS: psida_common.get_segments(),
                 }
 
     if functions_only:
@@ -367,7 +367,7 @@ def populate_form_with_items(items):
 
         if item_type == ItemType.Name:
             new_name = item['name']
-            current_name = idb_push_common.get_non_default_name(address)
+            current_name = psida_common.get_non_default_name(address)
 
             if current_name == new_name:
                 continue
@@ -379,7 +379,7 @@ def populate_form_with_items(items):
 
         elif item_type == ItemType.Comment:
             new_comment = item['comment']
-            current_comment = idb_push_common.get_comment(address)
+            current_comment = psida_common.get_comment(address)
 
             if new_comment is None or len(new_comment) == 0 or new_comment == current_comment:
                 continue
@@ -391,7 +391,7 @@ def populate_form_with_items(items):
 
         elif item_type == ItemType.RepeatableComment:
             new_comment = item['comment']
-            current_comment = idb_push_common.get_repeated_comment(address)
+            current_comment = psida_common.get_repeated_comment(address)
 
             if new_comment is None or len(new_comment) == 0 or new_comment == current_comment:
                 continue
@@ -528,23 +528,23 @@ def apply_item(row_index):
 
         # apply update
         item = g_item_list_model.item(row_index).data()
-        item = idb_push_common.convert_struct_to_utf8(item)
+        item = psida_common.convert_struct_to_utf8(item)
         item_type = item['type']
         address = item['address']
 
         if item_type == ItemType.Name:
             name = item['name']
-            if not idb_push_common.set_name(address, name):
+            if not psida_common.set_name(address, name):
                 print "Failed to name 0x%x as %s" % (address, name)
                 should_remove_row = False
 
         elif item_type == ItemType.Comment:
             comment = item['comment']
-            idb_push_common.set_comment(address, comment)
+            psida_common.set_comment(address, comment)
 
         elif item_type == ItemType.RepeatableComment:
             comment = item['comment']
-            idb_push_common.set_repeated_comment(address, comment)
+            psida_common.set_repeated_comment(address, comment)
 
         elif item_type == ItemType.AnteriorLines:
             lines = item['lines']
@@ -597,9 +597,9 @@ def unpickle(source_file=None,
         # check for segment change
         if not ignore_segment_change:
             # using iteritems since iterating on a dictionary returns only the dictionary keys
-            if idb_push_common.get_segments() != idb_data[SEGMENTS]:
+            if psida_common.get_segments() != idb_data[SEGMENTS]:
                 if 1 != idc.AskYN(0, SEGMENT_WARNING % (format_segments(idb_data[SEGMENTS]),
-                                                        format_segments(idb_push_common.get_segments()))):
+                                                        format_segments(psida_common.get_segments()))):
                     # user replied No or Cancel
                     return
 
