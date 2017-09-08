@@ -328,7 +328,6 @@ class IDBHook(idaapi.IDB_Hooks):
         return idaapi.IDB_Hooks.struc_member_renamed(self, sptr, mptr)
 
 # globals
-# TODO: Deal with socket closing unexpectedly (Server throwing a RST, computer sleeping, etc.)
 g_zmq_socket = None
 g_idp_hook = IDPHook()
 g_idb_hook = IDBHook()
@@ -424,10 +423,10 @@ def start():
     open_zmq_socket()
 
     if not g_idp_hook.hook():
-        raise Exception('RenameIDPHook installation FAILED')
+        raise Exception('IDPHook installation FAILED')
 
     if not g_idb_hook.hook():
-        raise Exception('CommentIDBHook installation FAILED')
+        raise Exception('IDBHook installation FAILED')
 
     global g_hooks_enabled
     g_hooks_enabled = True
@@ -570,8 +569,10 @@ def on_apply_button_clicked():
         # AND you have to keep the update order you need to
         # track the offset for all indices after the one you just removed
         for i in sorted(indices):
-            row_was_removed = apply_update(i - removed_rows)
-            if row_was_removed:
+            success, row_was_removed = apply_update(i - removed_rows)
+            if not success:
+                print 'ERROR - Update - Could not update: "%s"' % g_item_list_model.item(i - removed_rows).text() 
+            elif row_was_removed:
                 removed_rows += 1
 
         idc.Refresh()
@@ -609,10 +610,14 @@ def apply_update(row_index):
         row_index (int): Index of the row to apply the update from
 
     Returns:
-        bool: Whether applying the change was successful and the row was removed.
+        tuple (bool, bool):
+            Whether applying the change was successful or not
+            Whether the row was removed or not
     """
     global g_hooks_enabled
     should_remove_row = True
+    row_removed = False
+    successfully_executed = False
 
     try:
         g_item_list_mutex.lock()
@@ -624,7 +629,6 @@ def apply_update(row_index):
         address = update['address']
 
         if update_type == UpdateTypes.Name:
-
             name = update['name']
             local_name = bool(update['local_name'])
             if not psida_common.set_name(address, name, local_name):
@@ -683,15 +687,20 @@ def apply_update(row_index):
         if should_remove_row:
             g_item_list_model.removeRow(row_index)
             g_identifiers_to_updates.pop(get_identifier(update))
+            row_removed = True
+
+        successfully_executed = True
     except:
-        traceback.print_exc()
+        if CONFIGURATION['debug']:
+            traceback.print_exc()
+        pass
 
     finally:
         g_item_list_mutex.unlock()
         g_hooks_enabled = True
 
-    assert g_item_list_model.rowCount() == len(g_identifiers_to_updates)
-    return should_remove_row
+    assert g_item_list_model.rowCount() == len(g_identifiers_to_updates) # TODO (Alexei): Why is this here?
+    return successfully_executed, row_removed
 
 
 def on_item_list_double_clicked(index):
@@ -958,3 +967,5 @@ except:
     print 'ERROR - Configuration - Couldn\'t load or create the configuration file'
     if CONFIGURATION['debug']:
         traceback.print_exc()
+
+print "HIIII"
