@@ -59,15 +59,19 @@ class IDB_Push_Plugin(idaapi.plugin_t):
                         idaapi.msg("ERROR - Run - Could not resolve server name. Make sure it's spelled correctly, and that you get DNS responses from it\n")
 
             if self.running:
-                self.psida_module.idb_push.stop()
+                # Reload only if in debug mode. Do nothing otherwise
                 if self.psida_module.idb_push.CONFIGURATION["debug"]:
+                    self.psida_module.idb_push.stop()
                     idaapi.msg("DEBUG - Run - idb_push already running, stopping and reloading...\n")
                     self.reload()
-
-            self.psida_module.idb_push.start()
-            if self.psida_module.idb_push.CONFIGURATION["debug"]:
-                idaapi.msg("DEBUG - Run - Successfully started idb_push\n")
-            self.running = True
+                    self.psida_module.idb_push.start()
+                    if self.psida_module.idb_push.CONFIGURATION["debug"]:
+                        idaapi.msg("DEBUG - Run - Successfully started idb_push\n")
+            else:
+                self.psida_module.idb_push.start()
+                if self.psida_module.idb_push.CONFIGURATION["debug"]:
+                    idaapi.msg("DEBUG - Run - Successfully started idb_push\n")
+                self.running = True
 
     def term(self):
         if self.running:
@@ -75,6 +79,7 @@ class IDB_Push_Plugin(idaapi.plugin_t):
             self.running = False
             if self.psida_module.idb_push.CONFIGURATION["debug"]:
                 idaapi.msg("DEBUG - Term - Successfully stopped idb_push\n")
+
 
 def PLUGIN_ENTRY():
     return IDB_Push_Plugin()
