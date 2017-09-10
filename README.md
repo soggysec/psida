@@ -69,6 +69,13 @@ Known Issues
 
 3. Occasionally a few of the IDA tabs go black completely (usually the Functions/Names tabs and the main Disassembly tab); pressing Space twice solves it.
 
+4. Renaming addresses that happen to have the same value as some struct's or stack variable's member id won't be transmitted. (Affects addresses that start with 0xFF00XXXX)
+
+5. Changing empty lines in anterior/posterior comments has funky behavior.
+
+6. Changing or creating stack variables' names will not deal correctly with the size of said varaibles. This is expected to be fixed once make data ('d') feature will be added.
+
+7. Removing comments won't be transmitted.
 
 You can always open an issue at https://bitbucket.org/argussecurity/psida/issues.
 

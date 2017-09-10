@@ -27,6 +27,17 @@ class IDB_Push_Plugin(idaapi.plugin_t):
         except ImportError:
             idaapi.msg("Error importing psida module. Make sure it resides in any directory that is in your PYTHONPATH\n")
             return idaapi.PLUGIN_HIDE
+
+    def reload(self):
+        try:
+            self.imported = False
+            reload(self.psida_module)
+            self.imported = True
+
+            if self.psida_module.idb_push.CONFIGURATION["debug"]:
+                idaapi.msg("DEBUG - Reload - Successfully reloaded psida\n")
+        except ImportError:
+            idaapi.msg("Error reloading psida module. Make sure it resides in any directory that is in your PYTHONPATH\n")
         
     def run(self, arg):
         if self.imported:
@@ -34,6 +45,9 @@ class IDB_Push_Plugin(idaapi.plugin_t):
                 connected = False
                 while not connected:
                     backend_hostname = idc.AskStr("Hostname or IP", "Backend not initialzied, input your backend's name or IP:")
+                    if not backend_hostname:
+                        # User canceled
+                        return
                     try:
                         self.psida_module.idb_push.configure(backend_hostname=backend_hostname)
                         # test connectivity
@@ -47,7 +61,8 @@ class IDB_Push_Plugin(idaapi.plugin_t):
             if self.running:
                 self.psida_module.idb_push.stop()
                 if self.psida_module.idb_push.CONFIGURATION["debug"]:
-                    idaapi.msg("DEBUG - Run - idb_push already running, stopping...\n")
+                    idaapi.msg("DEBUG - Run - idb_push already running, stopping and reloading...\n")
+                    self.reload()
 
             self.psida_module.idb_push.start()
             if self.psida_module.idb_push.CONFIGURATION["debug"]:
