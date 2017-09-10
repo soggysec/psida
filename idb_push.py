@@ -9,163 +9,16 @@ import zmq_primitives
 from PyQt5 import QtGui, QtCore, QtWidgets
 from idaapi import PluginForm
 from idb_push_config import *
-
-CONTEXT_MENU_ACTION_NAME = 'idb_push:send_address'
-
-
-class UpdateTypes(object):
-    Name, Comment, RepeatableComment, AnteriorLine, PosteriorLine, LookHere, StackVariableRenamed, StructMemberCreated, StructMemberRenamed = range(
-        9)
-
-
-def send_push_update(json_message):
-    if 'user' not in json_message:
-        json_message['user'] = CONFIGURATION[USER]
-    if 'project' not in json_message:
-        json_message['project'] = os.path.basename(idc.GetIdbPath())
-
-    zmq_primitives.zmq_send_json(g_zmq_socket,
-                                 json_message)
-
-
-class IDPHook(idaapi.IDP_Hooks):
-    def __init__(self):
-        idaapi.IDP_Hooks.__init__(self)
-
-    def renamed(self, ea, new_name, local_name):
-        if CONFIGURATION['debug']:
-            print 'DEBUG - Hooks - RenameIDPHook.renamed(ea = 0x%x, new_name = %s, local_name = %r)' % (
-                ea, new_name, local_name)
-
-        if ida_struct.is_member_id(ea):
-            # Change is either a built-in struct of a frame pointer, or some address starting with 0xFF00 that happens to be a member address.
-            # if CONFIGURATION['debug']:
-            print 'INFO - Hooks - RenameIDPHook - Skipping a possible stack variable/built-in struct change'
-            return idaapi.IDP_Hooks.renamed(self, ea, new_name, local_name)
-
-        if (g_hooks_enabled and
-                (new_name is not None) and
-                (len(new_name) > 0) and
-                (not psida_common.is_default_name(new_name))):
-            send_push_update({'type': UpdateTypes.Name,
-                              'address': ea,
-                              'name': new_name,
-                              'local_name': local_name})
-
-        return idaapi.IDP_Hooks.renamed(self, ea, new_name, local_name)
-
-
-class IDBHook(idaapi.IDB_Hooks):
-    def __init__(self):
-        idaapi.IDB_Hooks.__init__(self)
-
-    def cmt_changed(self, ea, is_repeatable):
-        if CONFIGURATION['debug']:
-            print 'DEBUG - Hooks - CommentIDBHook.cmt_changed(arg0 = 0x%x, is_repeatable = %s)' % (ea, is_repeatable)
-
-        message = {'address': ea}
-
-        if is_repeatable:
-            message['type'] = UpdateTypes.RepeatableComment
-            message['comment'] = psida_common.get_repeated_comment(ea)
-        else:
-            message['type'] = UpdateTypes.Comment
-            message['comment'] = psida_common.get_comment(ea)
-
-        if g_hooks_enabled and (message['comment'] is not None) and (len(message['comment']) > 0):
-            send_push_update(message)
-
-        return idaapi.IDB_Hooks.cmt_changed(self, ea, is_repeatable)
-
-    def area_cmt_changed(self, areas, area, comment, is_repeatable):
-        if CONFIGURATION['debug']:
-            print 'DEBUG - Hooks - CommentIDBHook.area_cmt_changed(area_start = 0x%x, comment = %s)' % (
-                area.startEA, comment)
-
-        ea = area.startEA
-        message = {'address': ea}
-
-        if is_repeatable:
-            message['type'] = UpdateTypes.RepeatableComment
-            message['comment'] = psida_common.get_repeated_comment(ea)
-        else:
-            message['type'] = UpdateTypes.Comment
-            message['comment'] = psida_common.get_comment(ea)
-
-        if g_hooks_enabled and (message['comment'] is not None) and (len(message['comment']) > 0):
-            send_push_update(message)
-
-        return idaapi.IDB_Hooks.area_cmt_changed(self, areas, area, comment, is_repeatable)
-
-    def extra_cmt_changed(self, ea, line_idx, cmt):
-        if CONFIGURATION['debug']:
-            print 'DEBUG - Hooks - CommentIDBHook.extra_cmt_changed(ea = 0x%x, line_idx = %d, cmt = %s)' % (
-                ea, line_idx, cmt)
-
-        message = {'address': ea, 'line': cmt}
-
-        if idaapi.E_PREV <= line_idx < idaapi.E_NEXT:
-            message['type'] = UpdateTypes.AnteriorLine
-            message['line_index'] = line_idx - idaapi.E_PREV
-        elif line_idx >= idaapi.E_NEXT:
-            message['type'] = UpdateTypes.PosteriorLine
-            message['line_index'] = line_idx - idaapi.E_NEXT
-        else:
-            if CONFIGURATION['debug']:
-                print 'DEBUG - Hooks - CommentIDBHook.extra_cmt_changed - unexpected line_idx, continuing...'
-            return idaapi.IDB_Hooks.extra_cmt_changed(self, ea, line_idx, cmt)
-
-        if g_hooks_enabled and (message['line'] is not None) and (len(message['line']) > 0):
-            send_push_update(message)
-
-        return idaapi.IDB_Hooks.extra_cmt_changed(self, ea, line_idx, cmt)
-
-    def struc_member_created(self, sptr, mptr):
-        if CONFIGURATION['debug']:
-            print 'DEBUG - Hooks - StructIDBHook.struc_member_created(sptr = %s, mptr = %s)' % (
-                pprint.pformat(sptr), pprint.pformat(mptr))
-
-        message = {'type': UpdateTypes.StructMemberCreated,
-                   'name': ida_struct.get_member_name(mptr.id),
-                   'address': ida_frame.get_func_by_frame(sptr.id),
-                   'offset': mptr.soff,
-                   'var_size': mptr.eoff - mptr.soff}
-
-        if sptr.props & 0x40:  # Struct changed is a frame pointer
-            message['type'] = UpdateTypes.StackVariableRenamed
-
-        if g_hooks_enabled and (message['name'] is not None) and (len(message['name']) > 0):
-            send_push_update(message)
-
-        return idaapi.IDB_Hooks.struc_member_created(self, sptr, mptr)
-
-    def struc_member_renamed(self, sptr, mptr):
-        if CONFIGURATION['debug']:
-            print 'DEBUG - Hooks - StructIDBHook.struc_member_renamed(sptr = %s, mptr = %s)' % (
-                pprint.pformat(sptr), pprint.pformat(mptr))
-
-        message = {'type': UpdateTypes.StructMemberRenamed,
-                   'name': ida_struct.get_member_name(mptr.id),
-                   'address': ida_frame.get_func_by_frame(sptr.id),
-                   'offset': mptr.soff,
-                   'var_size': mptr.eoff - mptr.soff}
-
-        if sptr.props & 0x40:  # Struct changed is a frame pointer
-            message['type'] = UpdateTypes.StackVariableRenamed
-
-        if g_hooks_enabled and (message['name'] is not None) and (len(message['name']) > 0):
-            send_push_update(message)
-
-        return idaapi.IDB_Hooks.struc_member_renamed(self, sptr, mptr)
+import hooks
+from idb_push_ops import *
 
 
 # globals
-g_zmq_socket = None
-g_idp_hook = IDPHook()
-g_idb_hook = IDBHook()
-g_ui_hooks = None
-g_hooks_enabled = False
+g_idp_hook = hooks.IDPHook()
+g_idb_hook = hooks.IDBHook()
+
 g_receive_thread = None
+
 g_item_list_mutex = None
 g_item_list_model = None
 g_item_list = None
@@ -243,8 +96,7 @@ def start():
     # test connectivity
     zmq_primitives.zmq_test_connectivity()
     # open global socket
-    global g_zmq_socket
-    g_zmq_socket = zmq_primitives.zmq_open_pub_socket()  # default arguments
+    hooks.g_zmq_socket = zmq_primitives.zmq_open_pub_socket()  # default arguments
 
     if not g_idp_hook.hook():
         raise Exception('IDPHook installation FAILED')
@@ -252,8 +104,7 @@ def start():
     if not g_idb_hook.hook():
         raise Exception('IDBHook installation FAILED')
 
-    global g_hooks_enabled
-    g_hooks_enabled = True
+    hooks.g_hooks_enabled = True
 
     global g_receive_thread
     g_receive_thread = ReceiveThread()
@@ -263,15 +114,14 @@ def start():
     g_form = IDBPushForm()
     g_form.Show('IDB PUSH')
 
-    install_ui_hooks()
+    hooks.install_ui_hooks()
 
     # register for when IDA terminates
     idaapi.notify_when(idaapi.NW_TERMIDA, stop)
 
 
 def _remove_hooks_and_stop_thread():
-    global g_hooks_enabled
-    g_hooks_enabled = False
+    hooks.g_hooks_enabled = False
     g_idp_hook.unhook()
     g_idb_hook.unhook()
 
@@ -279,7 +129,7 @@ def _remove_hooks_and_stop_thread():
     if g_receive_thread is not None:
         g_receive_thread.signal_stop()
 
-    uninstall_ui_hooks()
+    hooks.uninstall_ui_hooks()
 
 
 def restart():
@@ -288,7 +138,7 @@ def restart():
 
 
 def stop(reason=None):
-    g_zmq_socket.close()
+    hooks.g_zmq_socket.close()
     _remove_hooks_and_stop_thread()
 
     global g_form
@@ -440,14 +290,13 @@ def apply_update(row_index):
             Whether applying the change was successful or not
             Whether the row was removed or not
     """
-    global g_hooks_enabled
     should_remove_row = True
     row_removed = False
     successfully_executed = False
 
     try:
         g_item_list_mutex.lock()
-        g_hooks_enabled = False
+        hooks.g_hooks_enabled = False
         # apply update
         update = g_item_list_model.item(row_index).data()
         update = psida_common.convert_struct_to_utf8(update)
@@ -523,7 +372,7 @@ def apply_update(row_index):
 
     finally:
         g_item_list_mutex.unlock()
-        g_hooks_enabled = True
+        hooks.g_hooks_enabled = True
 
     assert g_item_list_model.rowCount() == len(g_identifiers_to_updates)  # TODO (Alexei): Why is this here?
     return successfully_executed, row_removed
@@ -737,42 +586,3 @@ class EscapeEater(QtCore.QObject):
         return super(EscapeEater, self).eventFilter(receiver, event)
 
 
-class SendPointerFromContextMenu(idaapi.action_handler_t):
-    def __init__(self):
-        idaapi.action_handler_t.__init__(self)
-
-    def activate(self, ctx):
-        send_push_update({'type': UpdateTypes.LookHere,
-                          'address': idc.ScreenEA()})
-        return 1
-
-    def update(self, ctx):
-        return idaapi.AST_ENABLE_FOR_FORM if ctx.form_type == idaapi.BWN_DISASM else idaapi.AST_DISABLE_FOR_FORM
-
-
-class IDBPushUIHooks(idaapi.UI_Hooks):
-    def finish_populating_tform_popup(self, form, popup):
-        if idaapi.get_tform_type(form) == idaapi.BWN_DISASM:
-            idaapi.attach_action_to_popup(form, popup, CONTEXT_MENU_ACTION_NAME, None)
-
-
-def install_ui_hooks():
-    if not idaapi.register_action(idaapi.action_desc_t(
-            CONTEXT_MENU_ACTION_NAME,  # must be unique
-            'Send address via IDB Push',
-            SendPointerFromContextMenu())):
-        raise Exception('Failed to register action')
-
-    global g_ui_hooks
-    g_ui_hooks = IDBPushUIHooks()
-    if not g_ui_hooks.hook():
-        raise Exception('Failed to install UI hook')
-
-
-def uninstall_ui_hooks():
-    idaapi.unregister_action(CONTEXT_MENU_ACTION_NAME)
-
-    global g_ui_hooks
-    if g_ui_hooks is not None:
-        g_ui_hooks.unhook()
-        g_ui_hooks = None
