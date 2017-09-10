@@ -9,6 +9,7 @@ import idc
 import ida_struct
 import ida_frame
 import ida_nalt
+import ida_diskio
 import random
 from socket import gethostbyname
 import pprint
@@ -25,7 +26,7 @@ CONTEXT_MENU_ACTION_NAME = 'idb_push:send_address'
 
 CONNECTION_STRING_FORMAT = r'tcp://%s:%d'
 
-CONFIG_FILE_NAME = os.path.join(os.path.expandvars(r'%APPDATA%\Hex-Rays\IDA Pro'), r'idb_push.cfg')
+CONFIG_FILE_NAME = os.path.join(ida_diskio.get_user_idadir(), r'idb_push.cfg')
 
 USER = 'user'
 BACKEND_HOSTNAME = 'backend_hostname'
