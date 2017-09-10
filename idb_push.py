@@ -1,204 +1,31 @@
-import os
-import idaapi
-import psida_common
-import traceback
-import json
-import time
-from idaapi import PluginForm
-import idc
-import ida_struct
+import pprint
 import ida_frame
 import ida_nalt
-import random
-from socket import gethostbyname
-import pprint
-
+import ida_struct
+import idaapi
+import idc
+import psida_common
+import zmq_primitives
 from PyQt5 import QtGui, QtCore, QtWidgets
-
-try:
-    import zmq
-except ImportError:
-    print 'WARNING - Import - zmq not found, idb_push will not function properly'
-    zmq = None
+from idaapi import PluginForm
+from idb_push_config import *
 
 CONTEXT_MENU_ACTION_NAME = 'idb_push:send_address'
 
-CONNECTION_STRING_FORMAT = r'tcp://%s:%d'
 
-CONFIG_FILE_NAME = os.path.join(os.path.expandvars(r'%APPDATA%\Hex-Rays\IDA Pro'), r'idb_push.cfg')
-
-USER = 'user'
-BACKEND_HOSTNAME = 'backend_hostname'
-SUB_PORT = 'sub_port'
-PUB_PORT = 'pub_port'
-ZMQ_TIMEOUT_MS = 'timeout'
-MAX_ITEMS_IN_LIST = 'max_items'
-DEBUG = 'debug'
-ZMQ_CONNECTIVITY_TEST_TIMEOUT_MS = 'connectivity_test_timeout'
-
-# filled with reasonable defaults
-CONFIGURATION = {
-    USER: os.getenv('COMPUTERNAME'),
-    BACKEND_HOSTNAME: '',
-    SUB_PORT: 5560,
-    PUB_PORT: 5559,
-    ZMQ_TIMEOUT_MS: 100,
-    ZMQ_CONNECTIVITY_TEST_TIMEOUT_MS: 1000,
-    MAX_ITEMS_IN_LIST: 1000,
-    DEBUG: False
-}
-    
 class UpdateTypes(object):
-    Name, Comment, RepeatableComment, AnteriorLine, PosteriorLine, LookHere, StackVariableRenamed, StructMemberCreated, StructMemberRenamed = range(9)
+    Name, Comment, RepeatableComment, AnteriorLine, PosteriorLine, LookHere, StackVariableRenamed, StructMemberCreated, StructMemberRenamed = range(
+        9)
 
 
-def store_configuration():
-    with open(CONFIG_FILE_NAME, 'w') as f:
-        json.dump(CONFIGURATION, f)
+def send_push_update(json_message):
+    if 'user' not in json_message:
+        json_message['user'] = CONFIGURATION[USER]
+    if 'project' not in json_message:
+        json_message['project'] = os.path.basename(idc.GetIdbPath())
 
-
-def load_configuration():
-    global CONFIGURATION
-
-    with open(CONFIG_FILE_NAME) as f:
-        CONFIGURATION = json.load(f)
-
-
-def configure(backend_hostname=None,
-              pub_port=None,
-              sub_port=None,
-              timeout=None,
-              connectivity_test_timeout=None,
-              max_items=None,
-              user=None,
-              debug=None):
-    global CONFIGURATION
-
-    # Try resolving the backend_hostname to IPv4.
-    # 'gethostbyname' only supports IPv4, which is nice.
-    # If the given string is an IP address, 'gethostbyname' returns it, which is also nice.
-    if backend_hostname:
-        backend_hostname = gethostbyname(backend_hostname)
-
-    # since this is a dictionary, all the arguments
-    # that are None will overwrite one another -
-    # and we don't mind at all
-    arguments_to_names = {backend_hostname: BACKEND_HOSTNAME,
-                          pub_port: PUB_PORT,
-                          sub_port: SUB_PORT,
-                          timeout: ZMQ_TIMEOUT_MS,
-                          connectivity_test_timeout: ZMQ_CONNECTIVITY_TEST_TIMEOUT_MS,
-                          max_items: MAX_ITEMS_IN_LIST,
-                          user: USER,
-                          debug: DEBUG}
-
-    for (argument, name) in arguments_to_names.iteritems():
-        if argument is None:
-            continue
-        CONFIGURATION[name] = argument
-
-    store_configuration()
-
-class ZMQConnectionException(BaseException):
-    pass
-    
-def zmq_test_connectivity():
-    """Creates a temporary ZMQ socket and tests server connectivity"""
-
-    pub_connection_string = r"tcp://%s:%d" % (CONFIGURATION[BACKEND_HOSTNAME],
-                                              CONFIGURATION[PUB_PORT])
-    sub_connection_string = r"tcp://%s:%d" % (CONFIGURATION[BACKEND_HOSTNAME],
-                                              CONFIGURATION[SUB_PORT])
-
-    context = zmq.Context()
-    random.seed()
-
-    rx_end_time = time.time() + (CONFIGURATION[ZMQ_CONNECTIVITY_TEST_TIMEOUT_MS] / 1000.0)
-    found_random_string = False
-
-    while time.time() < rx_end_time:
-        try:
-            # open a transmitting socket
-            tx_socket = context.socket(zmq.PUB)
-            tx_socket.setsockopt(zmq.LINGER, CONFIGURATION[ZMQ_TIMEOUT_MS])
-            tx_socket.connect(pub_connection_string)
-            topic = "0"  # dummy
-
-            # open a receiving socket
-            rx_socket = context.socket(zmq.SUB)
-            rx_socket.connect(sub_connection_string)
-            rx_socket.setsockopt(zmq.SUBSCRIBE, "")
-            rx_socket.RCVTIMEO = CONFIGURATION[ZMQ_TIMEOUT_MS]
-
-            # sleep to allow both sockets to connect
-            time.sleep(CONFIGURATION[ZMQ_TIMEOUT_MS] / 1000.0)
-
-            # send a random test packet
-            random_string = "%010x" % random.randrange(16 ** 10)
-            tx_socket.send_multipart([topic, json.dumps(random_string)])
-
-            # wait for a while for the reply to arrive
-            _, message = rx_socket.recv_multipart()
-            tx_socket.close()
-            rx_socket.close()
-
-            if random_string in message:
-                found_random_string = True
-                break
-
-        except zmq.error.Again:
-            # timeout - that's OK
-            continue
-
-    if not found_random_string:
-        raise ZMQConnectionException('ZMQ connectivity test failed!')
-
-def open_zmq_socket():
-    global g_zmq_socket
-    try:
-        context = zmq.Context()
-        g_zmq_socket = context.socket(zmq.PUB)
-        g_zmq_socket.setsockopt(zmq.LINGER, CONFIGURATION[ZMQ_TIMEOUT_MS])
-
-        connection_string = CONNECTION_STRING_FORMAT % (CONFIGURATION[BACKEND_HOSTNAME],
-                                                        CONFIGURATION[PUB_PORT])
-        g_zmq_socket.connect(connection_string)
-    except zmq.ZMQBaseError:
-        if CONFIGURATION['debug']:
-            traceback.print_exc()
-        raise Exception('Error in creating ZMQ socket')
-
-def restart_zmq_socket():
-    close_zmq_socket()
-    open_zmq_socket()
-
-def close_zmq_socket():
-    global g_zmq_socket
-    try:
-        g_zmq_socket.close()
-    except:
-        pass
-    del g_zmq_socket
-    g_zmq_socket = None
-
-def zmq_pub_json(json_message):
-    global g_zmq_socket
-    try:
-        if 'user' not in json_message:
-            json_message['user'] = CONFIGURATION[USER]
-        if 'project' not in json_message:
-            json_message['project'] = os.path.basename(idc.GetIdbPath())
-        
-        topic = '0'  # dummy
-        g_zmq_socket.send_multipart([topic, json.dumps(json_message)])
-
-        if CONFIGURATION['debug']:
-            print 'DEBUG - SendThread - Sent message\r\n%s' % pprint.pformat(json_message)
-
-    except zmq.ZMQBaseError:
-        if CONFIGURATION['debug']:
-                traceback.print_exc()
-        raise Exception('Error in sending message in ZMQ socket')
+    zmq_primitives.zmq_send_json(g_zmq_socket,
+                                 json_message)
 
 
 class IDPHook(idaapi.IDP_Hooks):
@@ -207,8 +34,8 @@ class IDPHook(idaapi.IDP_Hooks):
 
     def renamed(self, ea, new_name, local_name):
         if CONFIGURATION['debug']:
-            print 'DEBUG - Hooks - RenameIDPHook.renamed(ea = 0x%x, new_name = %s, local_name = %r)' % (ea, new_name, local_name)
-
+            print 'DEBUG - Hooks - RenameIDPHook.renamed(ea = 0x%x, new_name = %s, local_name = %r)' % (
+                ea, new_name, local_name)
 
         if ida_struct.is_member_id(ea):
             # Change is either a built-in struct of a frame pointer, or some address starting with 0xFF00 that happens to be a member address.
@@ -220,10 +47,10 @@ class IDPHook(idaapi.IDP_Hooks):
                 (new_name is not None) and
                 (len(new_name) > 0) and
                 (not psida_common.is_default_name(new_name))):
-            zmq_pub_json({'type': UpdateTypes.Name,
-                          'address': ea,
-                          'name': new_name,
-                          'local_name': local_name})
+            send_push_update({'type': UpdateTypes.Name,
+                              'address': ea,
+                              'name': new_name,
+                              'local_name': local_name})
 
         return idaapi.IDP_Hooks.renamed(self, ea, new_name, local_name)
 
@@ -235,7 +62,7 @@ class IDBHook(idaapi.IDB_Hooks):
     def cmt_changed(self, ea, is_repeatable):
         if CONFIGURATION['debug']:
             print 'DEBUG - Hooks - CommentIDBHook.cmt_changed(arg0 = 0x%x, is_repeatable = %s)' % (ea, is_repeatable)
-        
+
         message = {'address': ea}
 
         if is_repeatable:
@@ -246,13 +73,14 @@ class IDBHook(idaapi.IDB_Hooks):
             message['comment'] = psida_common.get_comment(ea)
 
         if g_hooks_enabled and (message['comment'] is not None) and (len(message['comment']) > 0):
-            zmq_pub_json(message)
+            send_push_update(message)
 
         return idaapi.IDB_Hooks.cmt_changed(self, ea, is_repeatable)
 
     def area_cmt_changed(self, areas, area, comment, is_repeatable):
         if CONFIGURATION['debug']:
-            print 'DEBUG - Hooks - CommentIDBHook.area_cmt_changed(area_start = 0x%x, comment = %s)' % (area.startEA, comment)
+            print 'DEBUG - Hooks - CommentIDBHook.area_cmt_changed(area_start = 0x%x, comment = %s)' % (
+                area.startEA, comment)
 
         ea = area.startEA
         message = {'address': ea}
@@ -265,13 +93,14 @@ class IDBHook(idaapi.IDB_Hooks):
             message['comment'] = psida_common.get_comment(ea)
 
         if g_hooks_enabled and (message['comment'] is not None) and (len(message['comment']) > 0):
-            zmq_pub_json(message)
+            send_push_update(message)
 
         return idaapi.IDB_Hooks.area_cmt_changed(self, areas, area, comment, is_repeatable)
 
     def extra_cmt_changed(self, ea, line_idx, cmt):
         if CONFIGURATION['debug']:
-            print 'DEBUG - Hooks - CommentIDBHook.extra_cmt_changed(ea = 0x%x, line_idx = %d, cmt = %s)' % (ea, line_idx, cmt)
+            print 'DEBUG - Hooks - CommentIDBHook.extra_cmt_changed(ea = 0x%x, line_idx = %d, cmt = %s)' % (
+                ea, line_idx, cmt)
 
         message = {'address': ea, 'line': cmt}
 
@@ -287,45 +116,48 @@ class IDBHook(idaapi.IDB_Hooks):
             return idaapi.IDB_Hooks.extra_cmt_changed(self, ea, line_idx, cmt)
 
         if g_hooks_enabled and (message['line'] is not None) and (len(message['line']) > 0):
-            zmq_pub_json(message)
+            send_push_update(message)
 
         return idaapi.IDB_Hooks.extra_cmt_changed(self, ea, line_idx, cmt)
 
     def struc_member_created(self, sptr, mptr):
         if CONFIGURATION['debug']:
-            print 'DEBUG - Hooks - StructIDBHook.struc_member_created(sptr = %s, mptr = %s)' % (pprint.pformat(sptr), pprint.pformat(mptr))
+            print 'DEBUG - Hooks - StructIDBHook.struc_member_created(sptr = %s, mptr = %s)' % (
+                pprint.pformat(sptr), pprint.pformat(mptr))
 
-        message = { 'type': UpdateTypes.StructMemberCreated,
-                    'name': ida_struct.get_member_name(mptr.id), 
-                    'address': ida_frame.get_func_by_frame(sptr.id),
-                    'offset': mptr.soff,
-                    'var_size': mptr.eoff - mptr.soff}
+        message = {'type': UpdateTypes.StructMemberCreated,
+                   'name': ida_struct.get_member_name(mptr.id),
+                   'address': ida_frame.get_func_by_frame(sptr.id),
+                   'offset': mptr.soff,
+                   'var_size': mptr.eoff - mptr.soff}
 
-        if sptr.props & 0x40: # Struct changed is a frame pointer
+        if sptr.props & 0x40:  # Struct changed is a frame pointer
             message['type'] = UpdateTypes.StackVariableRenamed
 
         if g_hooks_enabled and (message['name'] is not None) and (len(message['name']) > 0):
-            zmq_pub_json(message)
+            send_push_update(message)
 
         return idaapi.IDB_Hooks.struc_member_created(self, sptr, mptr)
 
     def struc_member_renamed(self, sptr, mptr):
         if CONFIGURATION['debug']:
-            print 'DEBUG - Hooks - StructIDBHook.struc_member_renamed(sptr = %s, mptr = %s)' % (pprint.pformat(sptr), pprint.pformat(mptr))
+            print 'DEBUG - Hooks - StructIDBHook.struc_member_renamed(sptr = %s, mptr = %s)' % (
+                pprint.pformat(sptr), pprint.pformat(mptr))
 
-        message = { 'type': UpdateTypes.StructMemberRenamed,
-                    'name': ida_struct.get_member_name(mptr.id), 
-                    'address': ida_frame.get_func_by_frame(sptr.id),
-                    'offset': mptr.soff,
-                    'var_size': mptr.eoff - mptr.soff}
+        message = {'type': UpdateTypes.StructMemberRenamed,
+                   'name': ida_struct.get_member_name(mptr.id),
+                   'address': ida_frame.get_func_by_frame(sptr.id),
+                   'offset': mptr.soff,
+                   'var_size': mptr.eoff - mptr.soff}
 
-        if sptr.props & 0x40: # Struct changed is a frame pointer
+        if sptr.props & 0x40:  # Struct changed is a frame pointer
             message['type'] = UpdateTypes.StackVariableRenamed
-        
+
         if g_hooks_enabled and (message['name'] is not None) and (len(message['name']) > 0):
-            zmq_pub_json(message)   
-     
+            send_push_update(message)
+
         return idaapi.IDB_Hooks.struc_member_renamed(self, sptr, mptr)
+
 
 # globals
 g_zmq_socket = None
@@ -345,6 +177,7 @@ g_form = None
 # (address, update type)
 g_identifiers_to_updates = {}
 
+
 def get_identifier(update_json):
     update_type = update_json['type']
     address = update_json['address']
@@ -363,14 +196,7 @@ class ReceiveThread(QtCore.QThread):
     def __init__(self):
         super(ReceiveThread, self).__init__()
         self._should_stop = False
-        self._connection_string = r'tcp://%s:%d' % (CONFIGURATION[BACKEND_HOSTNAME],
-                                                    CONFIGURATION[SUB_PORT])
-        self._context = zmq.Context()
-
-        self._socket = self._context.socket(zmq.SUB)
-        self._socket.connect(self._connection_string)
-        self._socket.setsockopt(zmq.SUBSCRIBE, '')
-        self._socket.RCVTIMEO = CONFIGURATION[ZMQ_TIMEOUT_MS]
+        self._socket = zmq_primitives.zmq_open_sub_socket()  # cause default arguments
 
     def signal_stop(self):
         self._should_stop = True
@@ -396,31 +222,29 @@ class ReceiveThread(QtCore.QThread):
                     continue
 
                 if CONFIGURATION['debug']:
-                    print 'DEBUG - ReceiveThread - Recieved message %s' % pprint.pformat(message)
+                    print 'DEBUG - ReceiveThread - Received message %s' % pprint.pformat(message)
 
                 update_form(message)
 
-            except zmq.error.Again:
+            except zmq_primitives.zmq.error.Again:
                 # timeout - that's OK
                 continue
-            except zmq.ZMQBaseError:
+            except zmq_primitives.zmq.ZMQBaseError:
                 # anything else - close and reopen the socket
                 traceback.print_exc()
                 self._socket.close()
 
-                self._socket = self._context.socket(zmq.SUB)
-                self._socket.connect(self._connection_string)
-                self._socket.setsockopt(zmq.SUBSCRIBE, '')
-                self._socket.RCVTIMEO = CONFIGURATION[ZMQ_TIMEOUT_MS]
+                self._socket = zmq_primitives.zmq_open_sub_socket()  # cause default arguments
 
 
 def start():
     print 'INFO - Configuration - \r\n' + pprint.pformat(CONFIGURATION)
 
     # test connectivity
-    zmq_test_connectivity()
+    zmq_primitives.zmq_test_connectivity()
     # open global socket
-    open_zmq_socket()
+    global g_zmq_socket
+    g_zmq_socket = zmq_primitives.zmq_open_pub_socket()  # default arguments
 
     if not g_idp_hook.hook():
         raise Exception('IDPHook installation FAILED')
@@ -457,12 +281,14 @@ def _remove_hooks_and_stop_thread():
 
     uninstall_ui_hooks()
 
+
 def restart():
     stop()
     start()
 
+
 def stop(reason=None):
-    close_zmq_socket()
+    g_zmq_socket.close()
     _remove_hooks_and_stop_thread()
 
     global g_form
@@ -571,7 +397,7 @@ def on_apply_button_clicked():
         for i in sorted(indices):
             success, row_was_removed = apply_update(i - removed_rows)
             if not success:
-                print 'ERROR - Update - Could not update: "%s"' % g_item_list_model.item(i - removed_rows).text() 
+                print 'ERROR - Update - Could not update: "%s"' % g_item_list_model.item(i - removed_rows).text()
             elif row_was_removed:
                 removed_rows += 1
 
@@ -628,7 +454,7 @@ def apply_update(row_index):
         update_type = update['type']
         address = update['address']
 
-        if update_type == UpdateTypes.Name: 
+        if update_type == UpdateTypes.Name:
             name = update['name']
             local_name = bool(update['local_name'])
             if not psida_common.set_name(address, name, local_name):
@@ -699,7 +525,7 @@ def apply_update(row_index):
         g_item_list_mutex.unlock()
         g_hooks_enabled = True
 
-    assert g_item_list_model.rowCount() == len(g_identifiers_to_updates) # TODO (Alexei): Why is this here?
+    assert g_item_list_model.rowCount() == len(g_identifiers_to_updates)  # TODO (Alexei): Why is this here?
     return successfully_executed, row_removed
 
 
@@ -916,8 +742,8 @@ class SendPointerFromContextMenu(idaapi.action_handler_t):
         idaapi.action_handler_t.__init__(self)
 
     def activate(self, ctx):
-        zmq_pub_json({'type': UpdateTypes.LookHere,
-                      'address': idc.ScreenEA()})
+        send_push_update({'type': UpdateTypes.LookHere,
+                          'address': idc.ScreenEA()})
         return 1
 
     def update(self, ctx):
@@ -950,20 +776,3 @@ def uninstall_ui_hooks():
     if g_ui_hooks is not None:
         g_ui_hooks.unhook()
         g_ui_hooks = None
-
-
-# load from the configuration file -
-# and create it if necessary
-try:
-    if os.path.isfile(CONFIG_FILE_NAME):
-        # read from the configuration file
-        load_configuration()
-    else:
-        # create a configuration file
-        # with default values
-        store_configuration()
-
-except:
-    print 'ERROR - Configuration - Couldn\'t load or create the configuration file'
-    if CONFIGURATION['debug']:
-        traceback.print_exc()
