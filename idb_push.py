@@ -628,7 +628,7 @@ def apply_update(row_index):
         update_type = update['type']
         address = update['address']
 
-        if update_type == UpdateTypes.Name:
+        if update_type == UpdateTypes.Name: 
             name = update['name']
             local_name = bool(update['local_name'])
             if not psida_common.set_name(address, name, local_name):
@@ -967,5 +967,3 @@ except:
     print 'ERROR - Configuration - Couldn\'t load or create the configuration file'
     if CONFIGURATION['debug']:
         traceback.print_exc()
-
-print "HIIII"
