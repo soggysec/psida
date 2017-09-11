@@ -2,8 +2,9 @@ import os
 import json
 from socket import gethostbyname
 import traceback
+import ida_diskio
 
-CONFIG_FILE_NAME = os.path.join(os.path.expandvars(r'%APPDATA%\Hex-Rays\IDA Pro'), r'idb_push.cfg')
+CONFIG_FILE_NAME = os.path.join(os.path.expandvars(ida_diskio.get_user_idadir()), r'idb_push.cfg')
 
 USER = 'user'
 BACKEND_HOSTNAME = 'backend_hostname'

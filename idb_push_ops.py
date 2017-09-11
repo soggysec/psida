@@ -16,8 +16,6 @@ class UpdateTypes(object):
 UpdateTypesNames = ("Name", "Comment", "RComment", "AntLine", "PostLine", "LookHere",
                     "StackVar", "StructMemCreated", "StructMemRenamed")
 
-# TODO: Make any json field constant
-
 
 class IdbUpdate(object):
     ATTRIBUTES = ['user', 'project', 'address', 'data', 'update_type']
@@ -28,16 +26,18 @@ class IdbUpdate(object):
         self.update_type = None
         self.user = None
         self.project = None
-
         self.data_at_address = None
-
-        for attribute_name in kwargs:
-            self.__setattr__(attribute_name, kwargs[attribute_name])
 
         if 'user' not in kwargs:
             self.user = CONFIGURATION[USER]
         if 'project' not in kwargs:
             self.project = os.path.basename(idc.GetIdbPath())
+
+        for attribute_name in self.ATTRIBUTES:
+            if self.__getattribute__(attribute_name) is None:
+                if attribute_name not in kwargs:
+                    raise Exception("ERROR - Ops - Required attribute name %s does not appear in arguments")
+                self.__setattr__(attribute_name, kwargs[attribute_name])
 
     def to_dict(self):
         attr_dict = {}
@@ -53,7 +53,7 @@ class IdbUpdate(object):
         """
         idc.Jump(self.address)
 
-    def __str__(self, data_at_address=None):
+    def __str__(self):
         """
         :return: (str) A description to appear in UI
         """
@@ -119,7 +119,7 @@ class PostAntLineUpdate(IdbUpdate):
     def get_identifier(self):
         return self.address, self.update_type, self.line_index
 
-    def __str__(self, data_at_address=None):
+    def __str__(self):
         """
         :return: (str) A description to appear in UI
         """
@@ -127,8 +127,8 @@ class PostAntLineUpdate(IdbUpdate):
                                               self.line_index,
                                               self.address,
                                               self.data)
-        if data_at_address:
-            description += "\n(YOURS: %s)" % data_at_address
+        if self.data_at_address:
+            description += "\n(YOURS: %s)" % self.data_at_address
         return description
 
     def apply(self):
@@ -159,12 +159,12 @@ class LookHereUpdate(IdbUpdate):
     def __init__(self, **kwargs):
         super(LookHereUpdate, self).__init__(**kwargs)
 
-    def __str__(self, data_at_address=None):
+    def __str__(self):
         description = "%s: look at 0x%x" % (self.user,
                                             self.address)
 
-        if data_at_address:
-            description += "(YOUR NAME: %s)" % data_at_address
+        if self.data_at_address:
+            description += "(YOUR NAME: %s)" % self.data_at_address
         return description
 
     def apply(self):
@@ -182,9 +182,9 @@ class StackVariableUpdate(IdbUpdate):
         self.var_size = None
         super(StackVariableUpdate, self).__init__(**kwargs)
 
-    def __str__(self, data_at_address=None):
-        description = super(StackVariableUpdate, self).__str__(data_at_address)
-        if not data_at_address:
+    def __str__(self):
+        description = super(StackVariableUpdate, self).__str__()
+        if not self.data_at_address:
             description += "\n(At offset: 0x%x)" % self.offset
         return description
 

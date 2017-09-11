@@ -1,6 +1,5 @@
 import pprint
 
-import idc
 import idaapi
 from PyQt5 import QtCore
 
@@ -10,7 +9,7 @@ import hooks
 import idb_push_ui
 import idb_push_ops
 from idb_push_config import *
-
+# Reload hack for debug sessions
 if CONFIGURATION[DEBUG]:
     reload(psida_common)
     reload(zmq_primitives)
@@ -18,16 +17,20 @@ if CONFIGURATION[DEBUG]:
     reload(idb_push_ui)
     reload(idb_push_ops)
 
-# globals
+# Globals for holding IDB and IDP hook currently registered
 g_idp_hook = hooks.IDPHook()
 g_idb_hook = hooks.IDBHook()
 
+# Holds the current thread running for receiving incoming updates
 g_receive_thread = None
-
+# Holds the current instance of the UI form
 g_form = None
 
 
 class ReceiveThread(QtCore.QThread):
+    """
+    This thread runs at the beginning and listens for incoming updates, then updates the form accordingly
+    """
     def __init__(self):
         super(ReceiveThread, self).__init__()
         self._should_stop = False
@@ -63,6 +66,14 @@ class ReceiveThread(QtCore.QThread):
 
 
 def start():
+    """
+    Boots idb_push by:
+        - Testing connectivity to the server
+        - Opening the global socket
+        - Hooks the relevant IDB events
+        - Hooks the UI context-menu element
+        - Installs a call to 'stop' when ida closes
+    """
     print 'INFO - Configuration - \r\n' + pprint.pformat(CONFIGURATION)
 
     # test connectivity
@@ -110,6 +121,16 @@ def restart():
 
 
 def stop(reason=None):
+    """
+    Stops ibd_push by
+        - Closing the global socket
+        - Removing the relevant IDB events hooks
+        - Removing the UI hooks
+        - Stopping the receive thread
+        - Closes the UI form
+
+    :param reason: The reason for idb_push's stop
+    """
     hooks.g_zmq_socket.close()
     _remove_hooks_and_stop_thread()
 

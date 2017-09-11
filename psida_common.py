@@ -141,25 +141,16 @@ def get_non_default_name(address):
 def set_name(address, new_name, local):
     assert type(new_name) == str
 
+    current_name_location = idc.LocByNameEx(address, new_name)
+
+    flags = idc.SN_CHECK | idc.SN_NOWARN
     if local:
-        # Check if this name exists somewhere
-        current_name_location = idc.LocByNameEx(address, new_name)
-        if current_name_location != idc.BADADDR:
-            # Check if it appears in the same function
-            if idc.GetFunctionName(address) == idc.GetFunctionName(current_name_location):
-                print "0x%x: can't rename byte as '%s' because the name is already used at 0x%x, locally" % (address,
-                                                                                            new_name,
-                                                                                            current_name_location)
-                return False
-        return idc.MakeNameEx(address, new_name, idc.SN_LOCAL)
-        
-    # if the name exists elsewhere you get an annoying popup,
-    # so first check that this isn't the case
-    current_name_location = idc.LocByName(new_name)
-    if current_name_location != idc.BADADDR:
+        flags = flags | idc.SN_LOCAL
+
+    ret = idc.MakeNameEx(address, new_name, flags)
+
+    if ret is False:
         print "0x%x: can't rename byte as '%s' because the name is already used at 0x%x" % (address,
                                                                                             new_name,
                                                                                             current_name_location)
-        return False
-
-    return idc.MakeName(address, new_name)
+    return ret

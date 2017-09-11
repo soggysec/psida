@@ -1,7 +1,10 @@
 import idaapi
+import idc
 import socket
+from PyQt5 import QtGui, QtCore, QtWidgets
 
-class IDB_Push_Plugin(idaapi.plugin_t):
+
+class IdbPushPlugin(idaapi.plugin_t):
     flags = None
     comment = """  Press Ctrl+Shift+P to start the plugin.
                 Troubleshooting:
@@ -82,4 +85,4 @@ class IDB_Push_Plugin(idaapi.plugin_t):
 
 
 def PLUGIN_ENTRY():
-    return IDB_Push_Plugin()
+    return IdbPushPlugin()

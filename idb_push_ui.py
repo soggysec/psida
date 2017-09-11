@@ -15,15 +15,15 @@ if CONFIGURATION[DEBUG]:
     reload(idb_push_ops)
     reload(hooks)
     reload(psida_common)
-# maps identifying properties of an update to the actual update object and its description
-# for anterior and posterior lines the identifier is the triplet
-# (address, update type, line index), for all other types it's
-# (address, update type)
+
+# Hols a unique identifier constructed from an update to the actual update object.
 g_identifiers_to_updates = {}
 
-# UI elements
+# Global mutex for the item list
 g_item_list_mutex = None
+# The item list's model
 g_item_list_model = None
+# The item list
 g_item_list = None
 
 
@@ -103,12 +103,13 @@ class IDBPushForm(PluginForm):
 
 
 def add_item(update):
-    """Adds a new item to the UI list.
+    """
+    Adds a new item to the UI list.
     Updates the item if the unique identifier tuple already exists in the list.
     Deletes the oldest entries if the list exceeds @MAX_ITEMS_IN_LIST
 
     Args:
-        update (dict) - The data to be connected to the item in the UI list
+        update (IdbUpdate) - The update to be added to the UI list
     """
     try:
         g_item_list_mutex.lock()
@@ -206,7 +207,7 @@ def update_form(update):
         elif (message_type == idb_push_ops.UpdateTypes.StructMemberRenamed or
               message_type == idb_push_ops.UpdateTypes.StructMemberCreated):
             if CONFIGURATION['debug']:
-                print 'DEBUG - UI - Unimplemented message sent: %s' % message_type
+                print 'DEBUG - UI - Unimplemented message received: %s' % message_type
             return
 
         else:
@@ -226,6 +227,9 @@ def update_form(update):
 
 
 class KeyPressFilter(QtCore.QObject):
+    """
+    Declares handles on relevant key presses inside the UI (Enter, Return, Backspace, Delete, Space)
+    """
     def eventFilter(self, receiver, event):
         if event.type() == QtCore.QEvent.KeyPress:
             if event.key() in [QtCore.Qt.Key_Backspace, QtCore.Qt.Key_Delete]:
@@ -239,6 +243,9 @@ class KeyPressFilter(QtCore.QObject):
 
 
 class EscapeEater(QtCore.QObject):
+    """
+    Blocks escape key events from passing on to prevent the window from closing
+    """
     def eventFilter(self, receiver, event):
         if event.type() == QtCore.QEvent.KeyPress:
             if event.key() == QtCore.Qt.Key_Escape:
@@ -247,16 +254,18 @@ class EscapeEater(QtCore.QObject):
 
 
 def on_item_list_double_clicked(index):
-    """Calling an update whenever an item on the UI list is double clicked. """
+    """Calling `apply` when an item UI list was double clicked."""
     apply_update([index.row()])
 
 
 def on_apply_button_clicked():
+    """Calling `apply` on every update selected while pressing apply"""
     indices = [index.row() for index in g_item_list.selectedIndexes()]
     apply_update(indices)
 
 
 def on_go_to_address_button_clicked():
+    """Calling go_to on go to address button clicked."""
     try:
         g_item_list_mutex.lock()
 
@@ -274,6 +283,7 @@ def on_go_to_address_button_clicked():
 
 
 def on_discard_button_clicked():
+    """Removing item on discard button clicked."""
     try:
         g_item_list_mutex.lock()
 
@@ -291,9 +301,14 @@ def on_discard_button_clicked():
 
 
 def apply_update(indices):
+    """
+    Calls the `apply` function on every update that needs to be applied, then removes said update.
+    Because the removal happens after every apply, a fix is need to be done on the index to remove.
+
+    :param indices: (list(int)) Indices in the item list of the updates that need to be applied
+    """
     try:
         g_item_list_mutex.lock()
-        # indices = [index.row() for index in g_item_list.selectedIndexes()]
 
         removed_rows = 0
         # since every time you apply an update you discard it
