@@ -1,12 +1,22 @@
 import pprint
-import hooks
-import idaapi
-import idb_push_ui
+
 import idc
+import idaapi
+from PyQt5 import QtCore
+
 import psida_common
 import zmq_primitives
-from PyQt5 import QtCore
+import hooks
+import idb_push_ui
+import idb_push_ops
 from idb_push_config import *
+
+if CONFIGURATION[DEBUG]:
+    reload(psida_common)
+    reload(zmq_primitives)
+    reload(hooks)
+    reload(idb_push_ui)
+    reload(idb_push_ops)
 
 # globals
 g_idp_hook = hooks.IDPHook()
@@ -32,24 +42,14 @@ class ReceiveThread(QtCore.QThread):
                 return
             try:
                 _, json_message = self._socket.recv_multipart()
-                message = json.loads(json_message)
-                if message is None or len(message) == 0:
-                    continue
-
-                message = psida_common.convert_struct_to_utf8(message)
-
-                if 'user' not in message or message['user'] == CONFIGURATION[USER]:
-                    # don't receive your own updates
-                    continue
-                if ('project' not in message or
-                            message['project'] != os.path.basename(idc.GetIdbPath())):
-                    # don't receive updates for other projects
+                update = idb_push_ops.from_json(json_message)
+                if update is None:
                     continue
 
                 if CONFIGURATION['debug']:
-                    print 'DEBUG - ReceiveThread - Received message %s' % pprint.pformat(message)
+                    print 'DEBUG - ReceiveThread - Received message %s' % pprint.pformat(update.to_dict())
 
-                idb_push_ui.update_form(message)
+                idb_push_ui.update_form(update)
 
             except zmq_primitives.zmq.error.Again:
                 # timeout - that's OK

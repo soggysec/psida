@@ -51,9 +51,9 @@ class IDB_Push_Plugin(idaapi.plugin_t):
                     try:
                         self.psida_module.idb_push.configure(backend_hostname=backend_hostname)
                         # test connectivity
-                        self.psida_module.idb_push.zmq_test_connectivity()
+                        self.psida_module.zmq_primitives.zmq_test_connectivity()
                         connected = True
-                    except self.psida_module.idb_push.ZMQConnectionException:
+                    except self.psida_module.zmq_primitives.ZMQConnectionException:
                         idaapi.msg("ERROR - Run - ZMQ Connectivity failed, make sure your server is set-up correctly.\n")
                     except socket.gaierror:
                         idaapi.msg("ERROR - Run - Could not resolve server name. Make sure it's spelled correctly, and that you get DNS responses from it\n")

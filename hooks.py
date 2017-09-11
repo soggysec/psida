@@ -1,9 +1,18 @@
-import idaapi, ida_struct, idc, ida_frame
-from idb_push_config import *
+import pprint
+
+import idc
+import idaapi
+import ida_frame
+import ida_struct
+
 import psida_common
 import zmq_primitives
-from idb_push_ops import *
-import pprint
+import idb_push_ops
+from idb_push_config import *
+if CONFIGURATION[DEBUG]:
+    reload(psida_common)
+    reload(zmq_primitives)
+    reload(idb_push_ops)
 
 CONTEXT_MENU_ACTION_NAME = 'idb_push:send_address'
 
@@ -12,14 +21,9 @@ g_zmq_socket = None
 g_ui_hooks = None
 
 
-def send_push_update(json_message):
-    if 'user' not in json_message:
-        json_message['user'] = CONFIGURATION[USER]
-    if 'project' not in json_message:
-        json_message['project'] = os.path.basename(idc.GetIdbPath())
-
+def send_push_update(update):
     zmq_primitives.zmq_send_json(g_zmq_socket,
-                                 json_message)
+                                 update.to_dict())
 
 
 class IDPHook(idaapi.IDP_Hooks):
@@ -41,10 +45,12 @@ class IDPHook(idaapi.IDP_Hooks):
                 (new_name is not None) and
                 (len(new_name) > 0) and
                 (not psida_common.is_default_name(new_name))):
-            send_push_update({'type': UpdateTypes.Name,
-                              'address': ea,
-                              'name': new_name,
-                              'local_name': local_name})
+            name_update = idb_push_ops.NameUpdate(
+                update_type=idb_push_ops.UpdateTypes.Name,
+                address=ea,
+                data=new_name,
+                is_local=local_name)
+            send_push_update(name_update)
 
         return idaapi.IDP_Hooks.renamed(self, ea, new_name, local_name)
 
@@ -57,17 +63,21 @@ class IDBHook(idaapi.IDB_Hooks):
         if CONFIGURATION[DEBUG]:
             print 'DEBUG - Hooks - CommentIDBHook.cmt_changed(arg0 = 0x%x, is_repeatable = %s)' % (ea, is_repeatable)
 
-        message = {'address': ea}
-
         if is_repeatable:
-            message['type'] = UpdateTypes.RepeatableComment
-            message['comment'] = psida_common.get_repeated_comment(ea)
+            data = psida_common.get_repeated_comment(ea)
+            comment_update = idb_push_ops.CommentUpdate(
+                update_type=idb_push_ops.UpdateTypes.RepeatableComment,
+                address=ea,
+                data=psida_common.get_repeated_comment(ea))
         else:
-            message['type'] = UpdateTypes.Comment
-            message['comment'] = psida_common.get_comment(ea)
+            data = psida_common.get_comment(ea)
+            comment_update = idb_push_ops.CommentUpdate(
+                update_type=idb_push_ops.UpdateTypes.Comment,
+                address=ea,
+                data=psida_common.get_comment(ea))
 
-        if g_hooks_enabled and (message['comment'] is not None) and (len(message['comment']) > 0):
-            send_push_update(message)
+        if g_hooks_enabled and (data is not None) and (len(data) > 0):
+            send_push_update(comment_update)
 
         return idaapi.IDB_Hooks.cmt_changed(self, ea, is_repeatable)
 
@@ -77,17 +87,21 @@ class IDBHook(idaapi.IDB_Hooks):
                 area.startEA, comment)
 
         ea = area.startEA
-        message = {'address': ea}
-
         if is_repeatable:
-            message['type'] = UpdateTypes.RepeatableComment
-            message['comment'] = psida_common.get_repeated_comment(ea)
+            data = psida_common.get_repeated_comment(ea)
+            comment_update = idb_push_ops.CommentUpdate(
+                update_type=idb_push_ops.UpdateTypes.RepeatableComment,
+                address=ea,
+                data=data)
         else:
-            message['type'] = UpdateTypes.Comment
-            message['comment'] = psida_common.get_comment(ea)
+            data = psida_common.get_comment(ea)
+            comment_update = idb_push_ops.CommentUpdate(
+                update_type=idb_push_ops.UpdateTypes.Comment,
+                address=ea,
+                data=data)
 
-        if g_hooks_enabled and (message['comment'] is not None) and (len(message['comment']) > 0):
-            send_push_update(message)
+        if g_hooks_enabled and (data is not None) and (len(data) > 0):
+            send_push_update(comment_update)
 
         return idaapi.IDB_Hooks.area_cmt_changed(self, areas, area, comment, is_repeatable)
 
@@ -96,21 +110,27 @@ class IDBHook(idaapi.IDB_Hooks):
             print 'DEBUG - Hooks - CommentIDBHook.extra_cmt_changed(ea = 0x%x, line_idx = %d, cmt = %s)' % (
                 ea, line_idx, cmt)
 
-        message = {'address': ea, 'line': cmt}
-
         if idaapi.E_PREV <= line_idx < idaapi.E_NEXT:
-            message['type'] = UpdateTypes.AnteriorLine
-            message['line_index'] = line_idx - idaapi.E_PREV
+            line_index = line_idx - idaapi.E_PREV
+            line_update = idb_push_ops.PostAntLineUpdate(
+                update_type=idb_push_ops.UpdateTypes.AnteriorLine,
+                address=ea,
+                data=cmt,
+                line_index=line_index)
         elif line_idx >= idaapi.E_NEXT:
-            message['type'] = UpdateTypes.PosteriorLine
-            message['line_index'] = line_idx - idaapi.E_NEXT
+            line_index = line_idx - idaapi.E_NEXT
+            line_update = idb_push_ops.PostAntLineUpdate(
+                update_type=idb_push_ops.UpdateTypes.PosteriorLine,
+                address=ea,
+                data=cmt,
+                line_index=line_index)
         else:
             if CONFIGURATION[DEBUG]:
                 print 'DEBUG - Hooks - CommentIDBHook.extra_cmt_changed - unexpected line_idx, continuing...'
             return idaapi.IDB_Hooks.extra_cmt_changed(self, ea, line_idx, cmt)
 
-        if g_hooks_enabled and (message['line'] is not None) and (len(message['line']) > 0):
-            send_push_update(message)
+        if g_hooks_enabled and (cmt is not None) and (len(cmt) > 0):  # TODO(alexei): ????
+            send_push_update(line_update)
 
         return idaapi.IDB_Hooks.extra_cmt_changed(self, ea, line_idx, cmt)
 
@@ -119,17 +139,24 @@ class IDBHook(idaapi.IDB_Hooks):
             print 'DEBUG - Hooks - StructIDBHook.struc_member_created(sptr = %s, mptr = %s)' % (
                 pprint.pformat(sptr), pprint.pformat(mptr))
 
-        message = {'type': UpdateTypes.StructMemberCreated,
-                   'name': ida_struct.get_member_name(mptr.id),
-                   'address': ida_frame.get_func_by_frame(sptr.id),
-                   'offset': mptr.soff,
-                   'var_size': mptr.eoff - mptr.soff}
-
+        data = ida_struct.get_member_name(mptr.id)
         if sptr.props & 0x40:  # Struct changed is a frame pointer
-            message['type'] = UpdateTypes.StackVariableRenamed
+            update = idb_push_ops.StackVariableUpdate(
+                    update_type=idb_push_ops.UpdateTypes.StackVariableRenamed,
+                    address=ida_frame.get_func_by_frame(sptr.id),
+                    data=data,
+                    offset=mptr.soff,
+                    var_size=mptr.eoff - mptr.soff)
+        else:
+            update = idb_push_ops.StructMemCreatedUpdate(
+                    update_type=idb_push_ops.UpdateTypes.StructMemberCreated,
+                    address=ida_frame.get_func_by_frame(sptr.id),
+                    data=data,
+                    offset=mptr.soff,
+                    var_size=mptr.eoff - mptr.soff)
 
-        if g_hooks_enabled and (message['name'] is not None) and (len(message['name']) > 0):
-            send_push_update(message)
+        if g_hooks_enabled and (data is not None) and (len(data) > 0):
+            send_push_update(update)
 
         return idaapi.IDB_Hooks.struc_member_created(self, sptr, mptr)
 
@@ -138,17 +165,24 @@ class IDBHook(idaapi.IDB_Hooks):
             print 'DEBUG - Hooks - StructIDBHook.struc_member_renamed(sptr = %s, mptr = %s)' % (
                 pprint.pformat(sptr), pprint.pformat(mptr))
 
-        message = {'type': UpdateTypes.StructMemberRenamed,
-                   'name': ida_struct.get_member_name(mptr.id),
-                   'address': ida_frame.get_func_by_frame(sptr.id),
-                   'offset': mptr.soff,
-                   'var_size': mptr.eoff - mptr.soff}
-
+        data = ida_struct.get_member_name(mptr.id)
         if sptr.props & 0x40:  # Struct changed is a frame pointer
-            message['type'] = UpdateTypes.StackVariableRenamed
+            update = idb_push_ops.StackVariableUpdate(
+                update_type=idb_push_ops.UpdateTypes.StackVariableRenamed,
+                address=ida_frame.get_func_by_frame(sptr.id),
+                data=data,
+                offset=mptr.soff,
+                var_size=mptr.eoff - mptr.soff)
+        else:
+            update = idb_push_ops.StructMemRenamedUpdate(
+                update_type=idb_push_ops.UpdateTypes.StructMemberRenamed,
+                address=ida_frame.get_func_by_frame(sptr.id),
+                data=data,
+                offset=mptr.soff,
+                var_size=mptr.eoff - mptr.soff)
 
-        if g_hooks_enabled and (message['name'] is not None) and (len(message['name']) > 0):
-            send_push_update(message)
+        if g_hooks_enabled and (data is not None) and (len(data) > 0):
+            send_push_update(update)
 
         return idaapi.IDB_Hooks.struc_member_renamed(self, sptr, mptr)
 
@@ -158,8 +192,10 @@ class SendPointerFromContextMenu(idaapi.action_handler_t):
         idaapi.action_handler_t.__init__(self)
 
     def activate(self, ctx):
-        send_push_update({'type': UpdateTypes.LookHere,
-                          'address': idc.ScreenEA()})
+        look_here_update = idb_push_ops.LookHereUpdate(
+            update_type=idb_push_ops.UpdateTypes.LookHere,
+            address=idc.ScreenEA())
+        send_push_update(look_here_update)
         return 1
 
     def update(self, ctx):

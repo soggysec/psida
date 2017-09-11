@@ -1,18 +1,25 @@
+import traceback
+
+import idc
+import ida_struct
+import ida_frame
 from idaapi import PluginForm
 from PyQt5 import QtGui, QtCore, QtWidgets
+
 import idb_push_ops
-from idb_push_config import *
-import traceback
-import idc, ida_struct, ida_frame
+import hooks
 import psida_common
+from idb_push_config import *
 
-
+if CONFIGURATION[DEBUG]:
+    reload(idb_push_ops)
+    reload(hooks)
+    reload(psida_common)
 # maps identifying properties of an update to the actual update object and its description
 # for anterior and posterior lines the identifier is the triplet
 # (address, update type, line index), for all other types it's
 # (address, update type)
 g_identifiers_to_updates = {}
-
 
 # UI elements
 g_item_list_mutex = None
@@ -92,24 +99,22 @@ class IDBPushForm(PluginForm):
         self.parent.setLayout(layout)
 
     def OnClose(self, _):
-        self.terminate_callback()
+        self._terminate_callback()
 
 
-def add_item(message, description):
+def add_item(update):
     """Adds a new item to the UI list.
     Updates the item if the unique identifier tuple already exists in the list.
     Deletes the oldest entries if the list exceeds @MAX_ITEMS_IN_LIST
 
     Args:
-        message (dict) - The data to be connected to the item in the UI list.
-        description (str) - The string to display on the list.
-
+        update (dict) - The data to be connected to the item in the UI list
     """
     try:
         g_item_list_mutex.lock()
         # make sure we don't have the same type of update to the
         # same address - if so, remove the old one!
-        new_message_identifier = idb_push_ops.get_identifier(message)
+        new_message_identifier = update.get_identifier()
 
         if new_message_identifier in g_identifiers_to_updates:
             # we have the same type of update for the same address
@@ -120,19 +125,19 @@ def add_item(message, description):
 
         # print description
         item = QtGui.QStandardItem()
-        item.setText(description)
-        item.setData(message)
-        item.setToolTip(description)
+        item.setText(str(update))
+        item.setData(update)
+        item.setToolTip(str(update))
 
         if g_item_list_model.rowCount() >= CONFIGURATION[MAX_ITEMS_IN_LIST]:
             print 'INFO - UI - Limit of %d items reached - removing oldest entry' % CONFIGURATION[MAX_ITEMS_IN_LIST]
             doomed_update = g_item_list_model.item(0).data()
 
             g_item_list_model.removeRow(0)
-            g_identifiers_to_updates.pop(idb_push_ops.get_identifier(doomed_update))
+            g_identifiers_to_updates.pop(doomed_update.get_identifier())
 
         g_item_list_model.appendRow(item)
-        g_identifiers_to_updates[new_message_identifier] = (message, description)
+        g_identifiers_to_updates[new_message_identifier] = (update, str(update))
 
     except:
         traceback.print_exc()
@@ -142,129 +147,77 @@ def add_item(message, description):
     assert g_item_list_model.rowCount() == len(g_identifiers_to_updates)
 
 
-def update_form(message):
-    """ Processes a new coming update by building a relevant description
-        depending on the message type and adding it to the list.
+def update_form(update):
+    """ Processes an incoming update by adding it to the form.
 
     Args:
-        message (dict) - The message received from the ZMQ server
+        update (IdbUpdate) - The message received from the ZMQ server, as a class that inherits IdbUpdate
     """
     try:
         g_item_list_mutex.lock()
-        message_type = message['type']
-        address = message['address']
+        message_type = update.update_type
+        address = update.address
+        current_data = None
 
         if message_type == idb_push_ops.UpdateTypes.Name:
-            new_name = message['name']
-            current_name = psida_common.get_non_default_name(address)
-
-            if current_name == new_name:
+            current_data = psida_common.get_non_default_name(address)
+            if current_data == update.data:
                 return
-
-            if current_name is not None:
-                description = 'Name [0x%x]: %s (YOURS: %s)' % (address, new_name, current_name)
-            else:
-                description = 'Name [0x%x]: %s' % (address, new_name)
-            add_item(message, description)
 
         elif message_type == idb_push_ops.UpdateTypes.Comment:
-            new_comment = message['comment']
-            current_comment = psida_common.get_comment(address)
-
-            if current_comment == new_comment:
+            current_data = psida_common.get_comment(address)
+            if current_data == update.data:
                 return
-
-            if (current_comment is not None) and (len(current_comment) > 0):
-                description = 'Comment [0x%x]: %s\n(YOURS: %s)' % (address, new_comment, current_comment)
-            else:
-                description = 'Comment [0x%x]: %s' % (address, new_comment)
-            add_item(message, description)
 
         elif message_type == idb_push_ops.UpdateTypes.RepeatableComment:
-            new_comment = message['comment']
-            current_comment = psida_common.get_repeated_comment(address)
-
-            if current_comment == new_comment:
+            current_data = psida_common.get_repeated_comment(address)
+            if current_data == update.data:
                 return
-
-            if (current_comment is not None) and (len(current_comment) > 0):
-                description = 'RComment [0x%x]: %s\n(YOURS: %s)' % (address, new_comment, current_comment)
-            else:
-                description = 'RComment [0x%x]: %s' % (address, new_comment)
-            add_item(message, description)
 
         elif message_type == idb_push_ops.UpdateTypes.AnteriorLine:
-            new_line = message['line']
-            line_index = message['line_index']
-            current_line = idc.LineA(address, line_index)
-
-            if new_line == current_line:
+            current_data = idc.LineA(address, update.line_index)
+            if current_data == update.data:
                 return
-
-            if (current_line is not None) and (len(current_line) > 0):
-                description = 'AntLine [0x%x] [%d]: %s\n(YOURS: %s)' % (address, line_index, new_line, current_line)
-            else:
-                description = 'AntLine [0x%x] [%d]: %s' % (address, line_index, new_line)
-            add_item(message, description)
 
         elif message_type == idb_push_ops.UpdateTypes.PosteriorLine:
-            new_line = message['line']
-            line_index = message['line_index']
-            current_line = idc.LineB(address, line_index)
-
-            if new_line == current_line:
+            current_data = idc.LineB(address, update.line_index)
+            if current_data == update.data:
                 return
-
-            if (current_line is not None) and (len(current_line) > 0):
-                description = 'PostLine [0x%x] [%d]: %s\n(YOURS: %s)' % (address, line_index, new_line, current_line)
-            else:
-                description = 'PostLine [0x%x] [%d]: %s' % (address, line_index, new_line)
-            add_item(message, description)
 
         elif message_type == idb_push_ops.UpdateTypes.LookHere:
-            user = message['user']
-            current_name = psida_common.get_non_default_name(address)
-
-            if current_name is not None:
-                description = '%s: look at 0x%x (YOUR NAME: %s)' % (user, address, current_name)
-            else:
-                description = '%s: look at 0x%x' % (user, address)
-
-            add_item(message, description)
+            current_data = psida_common.get_non_default_name(address)
 
         elif message_type == idb_push_ops.UpdateTypes.StackVariableRenamed:
-
-            func_ea = message['address']
-            func_frame = ida_frame.get_frame(func_ea)
-            message['func_frame_ptr'] = func_frame
-            member = ida_struct.get_member(func_frame, message['offset'])
-            current_name = None
+            func_frame = ida_frame.get_frame(address)
+            update.func_frame_ptr = func_frame
+            member = ida_struct.get_member(func_frame, update.offset)
+            current_data = None
             if member is not None:
-                current_name = ida_struct.get_member_name(member.id)
-            new_name = message['name']
+                current_data = ida_struct.get_member_name(member.id)
 
-            if new_name == current_name:
+            if current_data == update.data:
                 return
 
-            if (current_name is not None):
-                message['new'] = False
-                description = 'StackVar [At Func: 0x%x]: %s\n(YOURS: %s)' % (func_ea, new_name, current_name)
+            if current_data is not None:
+                update.new = False
             else:
-                message['new'] = True
-                description = 'StackVar [At Func: 0x%x]: %s\n(At offset: 0x%x)' % (func_ea, new_name, message['offset'])
-
-            add_item(message, description)
+                update.new = True
 
         elif (message_type == idb_push_ops.UpdateTypes.StructMemberRenamed or
-                      message_type == idb_push_ops.UpdateTypes.StructMemberCreated):
+              message_type == idb_push_ops.UpdateTypes.StructMemberCreated):
             if CONFIGURATION['debug']:
-                print 'DEBUG - UI - Unimplemented message sent: %s' % (message_type)
+                print 'DEBUG - UI - Unimplemented message sent: %s' % message_type
 
         else:
             if CONFIGURATION['debug']:
-                print 'DEBUG - UI - Unrecognized type %d: in message %s' % (message_type, str(message))
+                print 'DEBUG - UI - Unrecognized type %d: in message %s' % (message_type, update.to_dict())
+
+        update.data_at_address = current_data
+        add_item(update)
     except:
-        traceback.print_exc()
+        if CONFIGURATION['debug']:
+            traceback.print_exc()
+        print 'ERROR - UI - General error while updating form'
 
     finally:
         g_item_list_mutex.unlock()
@@ -296,6 +249,11 @@ def on_item_list_double_clicked(index):
     apply_update([index.row()])
 
 
+def on_apply_button_clicked():
+    indices = [index.row() for index in g_item_list.selectedIndexes()]
+    apply_update(indices)
+
+
 def on_go_to_address_button_clicked():
     try:
         g_item_list_mutex.lock()
@@ -306,12 +264,28 @@ def on_go_to_address_button_clicked():
             return
 
         index = indices[0].row()
-        address = g_item_list_model.item(index).data()['address']
-        idc.Jump(address)
+        g_item_list_model.item(index).data().go_to()
     except:
         traceback.print_exc()
     finally:
         g_item_list_mutex.unlock()
+
+
+def on_discard_button_clicked():
+    try:
+        g_item_list_mutex.lock()
+
+        indices = [index.row() for index in g_item_list.selectedIndexes()]
+        for i in sorted(indices, reverse=True):
+            update = g_item_list_model.item(i).data()
+            g_item_list_model.removeRow(i)
+            g_identifiers_to_updates.pop(update.get_identifier())
+    except:
+        traceback.print_exc()
+    finally:
+        g_item_list_mutex.unlock()
+
+    assert g_item_list_model.rowCount() == len(g_identifiers_to_updates)
 
 
 def apply_update(indices):
@@ -325,15 +299,27 @@ def apply_update(indices):
         # track the offset for all indices after the one you just removed
         for i in sorted(indices):
             effective_index = i - removed_rows
-            update = g_item_list_model.item(effective_index)
-            update_data = psida_common.convert_struct_to_utf8(update.data())
+            update_item = g_item_list_model.item(effective_index)
+            update = update_item.data()
 
-            success, should_remove_row = idb_push_ops.apply_update_to_idb(update_data)
-            if not success:
-                print 'ERROR - Update - Could not update: "%s"' % update.text()
+            successfully_executed = False
+            should_remove_row = True
+            try:
+                hooks.g_hook_enabled = False
+                should_remove_row = update.apply()
+                successfully_executed = True
+            except:
+                if CONFIGURATION['debug']:
+                    traceback.print_exc()
+                pass
+            finally:
+                hooks.g_hooks_enabled = True
+
+            if not successfully_executed:
+                print 'ERROR - Update - Could not update: "%s"' % update_item.text()
             elif should_remove_row:
                 g_item_list_model.removeRow(effective_index)
-                g_identifiers_to_updates.pop(idb_push_ops.get_identifier(update_data))
+                g_identifiers_to_updates.pop(update.get_identifier())
                 removed_rows += 1
 
         idc.Refresh()
@@ -342,28 +328,3 @@ def apply_update(indices):
 
     finally:
         g_item_list_mutex.unlock()
-
-
-def on_apply_button_clicked():
-    indices = [index.row() for index in g_item_list.selectedIndexes()]
-    apply_update(indices)
-
-
-def on_discard_button_clicked():
-    try:
-        g_item_list_mutex.lock()
-
-        indices = [index.row() for index in g_item_list.selectedIndexes()]
-        for i in sorted(indices, reverse=True):
-            update = g_item_list_model.item(i).data()
-
-            g_item_list_model.removeRow(i)
-            g_identifiers_to_updates.pop(idb_push_ops.get_identifier(update))
-
-    except:
-        traceback.print_exc()
-
-    finally:
-        g_item_list_mutex.unlock()
-
-    assert g_item_list_model.rowCount() == len(g_identifiers_to_updates)
