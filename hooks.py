@@ -35,7 +35,7 @@ class IDPHook(idaapi.IDP_Hooks):
             print 'DEBUG - Hooks - RenameIDPHook.renamed(ea = 0x%x, new_name = %s, local_name = %r)' % (
                 ea, new_name, local_name)
 
-        if ida_struct.is_member_id(ea):
+        if ida_struct.is_member_id(ea) or ida_struct.get_struc(ea):
             # Change is either a built-in struct of a frame pointer, or some address
             # starting with 0xFF00 that happens to be a member address.
             print 'INFO - Hooks - RenameIDPHook - Skipping a possible stack variable/built-in struct change'

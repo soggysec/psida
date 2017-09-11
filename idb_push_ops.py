@@ -96,8 +96,9 @@ class CommentUpdate(IdbUpdate):
 
 
 class NameUpdate(IdbUpdate):
+    ATTRIBUTES = ['user', 'project', 'address', 'data', 'update_type', 'is_local']
+
     def __init__(self, **kwargs):
-        self.ATTRIBUTES.append('is_local')
         self.is_local = None
         super(NameUpdate, self).__init__(**kwargs)
 
@@ -109,8 +110,9 @@ class NameUpdate(IdbUpdate):
 
 
 class PostAntLineUpdate(IdbUpdate):
+    ATTRIBUTES = ['user', 'project', 'address', 'data', 'update_type', 'line_index']
+
     def __init__(self, **kwargs):
-        self.ATTRIBUTES.append('line_index')
         self.line_index = None
         super(PostAntLineUpdate, self).__init__(**kwargs)
 
@@ -171,11 +173,9 @@ class LookHereUpdate(IdbUpdate):
 
 
 class StackVariableUpdate(IdbUpdate):
+    ATTRIBUTES = ['user', 'project', 'address', 'data', 'update_type', 'func_frame_pointer', 'offset', 'new', 'var_size']
+
     def __init__(self, **kwargs):
-        self.ATTRIBUTES.append('func_frame_pointer')
-        self.ATTRIBUTES.append('offset')
-        self.ATTRIBUTES.append('new')
-        self.ATTRIBUTES.append('var_size')
         self.func_frame_pointer = None
         self.offset = None
         self.new = None

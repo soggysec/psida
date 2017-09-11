@@ -189,7 +189,7 @@ def update_form(update):
 
         elif message_type == idb_push_ops.UpdateTypes.StackVariableRenamed:
             func_frame = ida_frame.get_frame(address)
-            update.func_frame_ptr = func_frame
+            update.func_frame_pointer = func_frame
             member = ida_struct.get_member(func_frame, update.offset)
             current_data = None
             if member is not None:
@@ -207,10 +207,12 @@ def update_form(update):
               message_type == idb_push_ops.UpdateTypes.StructMemberCreated):
             if CONFIGURATION['debug']:
                 print 'DEBUG - UI - Unimplemented message sent: %s' % message_type
+            return
 
         else:
             if CONFIGURATION['debug']:
                 print 'DEBUG - UI - Unrecognized type %d: in message %s' % (message_type, update.to_dict())
+            return
 
         update.data_at_address = current_data
         add_item(update)
