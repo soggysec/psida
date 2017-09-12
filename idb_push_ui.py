@@ -9,6 +9,8 @@ from PyQt5 import QtGui, QtCore, QtWidgets
 import idb_push_ops
 import hooks
 import psida_common
+import idb_push_config
+reload(idb_push_config)
 from idb_push_config import *
 
 if CONFIGURATION[DEBUG]:

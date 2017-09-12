@@ -8,6 +8,8 @@ import ida_struct
 import psida_common
 import zmq_primitives
 import idb_push_ops
+import idb_push_config
+reload(idb_push_config)
 from idb_push_config import *
 # Reload hack for debug sessions
 if CONFIGURATION[DEBUG]:

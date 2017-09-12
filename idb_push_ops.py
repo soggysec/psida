@@ -6,6 +6,8 @@ import idc
 import ida_struct
 import ida_nalt
 
+import idb_push_config
+reload(idb_push_config)
 from idb_push_config import *
 
 

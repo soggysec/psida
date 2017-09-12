@@ -1,7 +1,9 @@
 import pprint
 import random
 import time
-from idb_push_config import *
+import idb_push_config
+reload(idb_push_config)
+from idb_push_ops import *
 
 try:
     import zmq
@@ -31,7 +33,6 @@ def zmq_test_connectivity(backend=CONFIGURATION[BACKEND_HOSTNAME],
                                               pub_port)
     sub_connection_string = r"tcp://%s:%d" % (backend,
                                               sub_port)
-
     context = zmq.Context()
     random.seed()
 
@@ -80,6 +81,7 @@ def zmq_open_sub_socket(backend=CONFIGURATION[BACKEND_HOSTNAME],
                         sub_port=CONFIGURATION[SUB_PORT],
                         timeout_ms=CONFIGURATION[ZMQ_TIMEOUT_MS],
                         debug=CONFIGURATION[DEBUG]):
+    zmq_assert_imported()
     try:
         context = zmq.Context()
         zmq_socket = context.socket(zmq.SUB)
@@ -101,6 +103,7 @@ def zmq_open_pub_socket(backend=CONFIGURATION[BACKEND_HOSTNAME],
                         pub_port=CONFIGURATION[PUB_PORT],
                         timeout_ms=CONFIGURATION[ZMQ_TIMEOUT_MS],
                         debug=CONFIGURATION[DEBUG]):
+    zmq_assert_imported()
     try:
         context = zmq.Context()
         zmq_socket = context.socket(zmq.PUB)
@@ -120,6 +123,7 @@ def zmq_open_pub_socket(backend=CONFIGURATION[BACKEND_HOSTNAME],
 def zmq_send_json(zmq_socket,
                   json_message,
                   debug=CONFIGURATION[DEBUG]):
+    zmq_assert_imported()
     try:
         topic = '0'  # dummy
         zmq_socket.send_multipart([topic, json.dumps(json_message)])

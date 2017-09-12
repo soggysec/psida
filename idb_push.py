@@ -8,6 +8,8 @@ import zmq_primitives
 import hooks
 import idb_push_ui
 import idb_push_ops
+import idb_push_config
+reload(idb_push_config)
 from idb_push_config import *
 # Reload hack for debug sessions
 if CONFIGURATION[DEBUG]:
@@ -131,7 +133,8 @@ def stop(reason=None):
 
     :param reason: The reason for idb_push's stop
     """
-    hooks.g_zmq_socket.close()
+    if hooks.g_zmq_socket:
+        hooks.g_zmq_socket.close()
     _remove_hooks_and_stop_thread()
 
     global g_form

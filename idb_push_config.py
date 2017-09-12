@@ -37,7 +37,9 @@ def load_configuration():
     global CONFIGURATION
 
     with open(CONFIG_FILE_NAME) as f:
-        CONFIGURATION = json.load(f)
+        loaded_config = json.load(f)
+    for key in loaded_config:
+        CONFIGURATION[key] = loaded_config[key]
 
 
 def configure(backend_hostname=None,
@@ -75,18 +77,24 @@ def configure(backend_hostname=None,
 
     store_configuration()
 
-# load from the configuration file -
-# and create it if necessary
-try:
-    if os.path.isfile(CONFIG_FILE_NAME):
-        # read from the configuration file
-        load_configuration()
-    else:
-        # create a configuration file
-        # with default values
-        store_configuration()
 
-except:
-    print 'ERROR - Configuration - Couldn\'t load or create the configuration file'
-    if CONFIGURATION['debug']:
-        traceback.print_exc()
+def set_configuration():
+    # load from the configuration file -
+    # and create it if necessary
+    try:
+        if os.path.isfile(CONFIG_FILE_NAME):
+            # read from the configuration file
+            "loading configuration"
+            load_configuration()
+        else:
+            # create a configuration file
+            # with default values
+            store_configuration()
+
+    except:
+        print 'ERROR - Configuration - Couldn\'t load or create the configuration file'
+        if CONFIGURATION['debug']:
+            traceback.print_exc()
+
+
+set_configuration()
