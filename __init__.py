@@ -1,4 +1,6 @@
 import idb_push
+import zmq_primitives
 
-# For when psida is reloaded and idb_push is already imported.
+# For when psida is reloaded and modules are already imported.
 reload(idb_push)
+reload(zmq_primitives)

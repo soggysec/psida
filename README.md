@@ -20,17 +20,15 @@ In order to use PSIDA you need to:
 
 1. Make sure the psida directory is in your PYTHONPATH
 
-2. Either copy idapythonrc.py into "%APPDATA%\Hex-Rays\IDA Pro" or (if you already have an idapythonrc.py) add "from PyQt5 import QtGui, QtCore, QtWidgets" to it.
+2. To use the online feature you also need to:
 
-3. To use the online feature you also need to:
-
-    3.1. Create a back-end server and:
+    2.1. Create a back-end server and:
 
        - Install zmq (`pip install pyzmq` should do the trick).
 
        - Install zmq_forwarder as a Windows service; starting it (via services.msc) and setting it as Automatic is probably a good idea.
 
-    3.2. On every local host:
+    2.2. On every local host:
 
        - Install zmq (`pip install pyzmq` should do the trick).
 
