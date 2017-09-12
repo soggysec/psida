@@ -1,4 +1,9 @@
-Current version is 0.3.
+Current version is 0.4.
+
+### Version 0.4
+1. Code refactoring
+2. Changes related to maintenance and debugging
+3. Got rid of the idapythonrc.py file 
 
 ### Version 0.3
 1. Added support for renaming stack variables.
