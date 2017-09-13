@@ -14,6 +14,7 @@ ZMQ_TIMEOUT_MS = 'timeout'
 MAX_ITEMS_IN_LIST = 'max_items'
 DEBUG = 'debug'
 ZMQ_CONNECTIVITY_TEST_TIMEOUT_MS = 'connectivity_test_timeout'
+AUTO_APPLY = 'auto_apply'
 
 # filled with reasonable defaults
 CONFIGURATION = {
@@ -24,7 +25,8 @@ CONFIGURATION = {
     ZMQ_TIMEOUT_MS: 100,
     ZMQ_CONNECTIVITY_TEST_TIMEOUT_MS: 1000,
     MAX_ITEMS_IN_LIST: 1000,
-    DEBUG: False
+    DEBUG: False,
+    AUTO_APPLY: False
 }
 
 
@@ -49,7 +51,8 @@ def configure(backend_hostname=None,
               connectivity_test_timeout=None,
               max_items=None,
               user=None,
-              debug=None):
+              debug=None,
+              auto_apply=None):
     global CONFIGURATION
 
     # Try resolving the backend_hostname to IPv4.
@@ -68,7 +71,8 @@ def configure(backend_hostname=None,
                           connectivity_test_timeout: ZMQ_CONNECTIVITY_TEST_TIMEOUT_MS,
                           max_items: MAX_ITEMS_IN_LIST,
                           user: USER,
-                          debug: DEBUG}
+                          debug: DEBUG,
+                          auto_apply: AUTO_APPLY}
 
     for (argument, name) in arguments_to_names.iteritems():
         if argument is None:

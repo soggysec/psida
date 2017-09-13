@@ -27,6 +27,8 @@ g_item_list_mutex = None
 g_item_list_model = None
 # The item list
 g_item_list = None
+# The auto-apply checkbox
+g_auto_apply_checkbox = None
 
 
 class IDBPushForm(PluginForm):
@@ -59,7 +61,6 @@ class IDBPushForm(PluginForm):
         apply_action.triggered.connect(on_apply_button_clicked)
         self.items_list.addAction(apply_action)
 
-        # add another action
         discard_action = QtWidgets.QAction('Discard', self.items_list)
         discard_action.triggered.connect(on_discard_button_clicked)
         self.items_list.addAction(discard_action)
@@ -67,6 +68,10 @@ class IDBPushForm(PluginForm):
         go_to_address_action = QtWidgets.QAction('Go to address', self.items_list)
         go_to_address_action.triggered.connect(on_go_to_address_button_clicked)
         self.items_list.addAction(go_to_address_action)
+
+        auto_apply_action = QtWidgets.QAction('Auto apply', self.items_list)
+        auto_apply_action.triggered.connect(on_auto_apply_action_checked)
+        self.items_list.addAction(auto_apply_action)
 
         global g_item_list_model
         g_item_list_model = self.model = QtGui.QStandardItemModel(self.items_list)
@@ -98,7 +103,15 @@ class IDBPushForm(PluginForm):
         go_to_address_button.clicked.connect(on_go_to_address_button_clicked)
         layout.addWidget(go_to_address_button)
 
+        auto_apply_checkbox = QtWidgets.QCheckBox('Auto apply no conflict')
+        auto_apply_checkbox.clicked.connect(on_auto_apply_action_checked)
+        layout.addWidget(auto_apply_checkbox)
+        global g_auto_apply_checkbox
+        g_auto_apply_checkbox = auto_apply_checkbox
+
         self.parent.setLayout(layout)
+        if CONFIGURATION[AUTO_APPLY]:
+            auto_apply_checkbox.click()
 
     def OnClose(self, _):
         self._terminate_callback()
@@ -106,6 +119,8 @@ class IDBPushForm(PluginForm):
 
 def add_item(update):
     """
+    Auto-applies, if the auto-apply checkbox is on.
+    Otherwise:
     Adds a new item to the UI list.
     Updates the item if the unique identifier tuple already exists in the list.
     Deletes the oldest entries if the list exceeds @MAX_ITEMS_IN_LIST
@@ -113,6 +128,12 @@ def add_item(update):
     Args:
         update (IdbUpdate) - The update to be added to the UI list
     """
+    if not update.conflict:
+        if g_auto_apply_checkbox.isChecked():
+            if CONFIGURATION[DEBUG]:
+                print 'DEBUG - UI - Auto-applying an update without conflict: %s' % update
+            apply_single_update(update)
+            return
     try:
         g_item_list_mutex.lock()
         # make sure we don't have the same type of update to the
@@ -218,6 +239,9 @@ def update_form(update):
             return
 
         update.data_at_address = current_data
+        update.conflict = False
+        if current_data:
+            update.conflict = True
         add_item(update)
     except:
         if CONFIGURATION['debug']:
@@ -253,6 +277,11 @@ class EscapeEater(QtCore.QObject):
             if event.key() == QtCore.Qt.Key_Escape:
                 return True
         return super(EscapeEater, self).eventFilter(receiver, event)
+
+
+def on_auto_apply_action_checked():
+    # Save auto-apply state
+    configure(auto_apply=g_auto_apply_checkbox.isChecked())
 
 
 def on_item_list_double_clicked(index):
@@ -302,6 +331,29 @@ def on_discard_button_clicked():
     assert g_item_list_model.rowCount() == len(g_identifiers_to_updates)
 
 
+def apply_single_update(update):
+    """
+    Applies a single update given the actual update instance
+
+    :param update: (IdbUpdate) The update instance to update
+    """
+    successfully_executed = False
+    try:
+        hooks.g_hook_enabled = False
+        update.apply()
+        successfully_executed = True
+    except:
+        if CONFIGURATION['debug']:
+            traceback.print_exc()
+        pass
+    finally:
+        hooks.g_hooks_enabled = True
+
+    if not successfully_executed:
+        print 'ERROR - Update - Could not update: "%s"' % update
+
+
+# TODO: Split this to an outer function that gets the relevant update and an inner generic function which applies
 def apply_update(indices):
     """
     Calls the `apply` function on every update that needs to be applied, then removes said update.
