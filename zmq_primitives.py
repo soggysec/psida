@@ -8,6 +8,7 @@ from idb_push_ops import *
 try:
     import zmq
 except ImportError:
+    # For use by idb_pickle
     print 'WARNING - zmq_primitives.py - zmq not found, idb_push will not function properly'
     zmq = None
 

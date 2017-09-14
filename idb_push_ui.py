@@ -3,6 +3,7 @@ import traceback
 import idc
 import ida_struct
 import ida_frame
+import ida_bytes
 from idaapi import PluginForm
 from PyQt5 import QtGui, QtCore, QtWidgets
 
@@ -128,8 +129,8 @@ def add_item(update):
     Args:
         update (IdbUpdate) - The update to be added to the UI list
     """
-    if not update.conflict:
-        if g_auto_apply_checkbox.isChecked():
+    if g_auto_apply_checkbox.isChecked():
+        if not update.has_conflict():
             if CONFIGURATION[DEBUG]:
                 print 'DEBUG - UI - Auto-applying an update without conflict: %s' % update
             apply_single_update(update)
@@ -227,21 +228,17 @@ def update_form(update):
             else:
                 update.new = True
 
-        elif (message_type == idb_push_ops.UpdateTypes.StructMemberRenamed or
-              message_type == idb_push_ops.UpdateTypes.StructMemberCreated):
-            if CONFIGURATION['debug']:
-                print 'DEBUG - UI - Unimplemented message received: %s' % message_type
-            return
+        elif message_type == idb_push_ops.UpdateTypes.MakeData:
+            current_data = update.get_conflict()
+            if current_data == '':
+                return
 
         else:
-            if CONFIGURATION['debug']:
-                print 'DEBUG - UI - Unrecognized type %d: in message %s' % (message_type, update.to_dict())
+            if CONFIGURATION[DEBUG]:
+                print 'DEBUG - UI - Unrecognized/Unimplemented type %d: in message %s' % (message_type, update.to_dict())
             return
 
         update.data_at_address = current_data
-        update.conflict = False
-        if current_data:
-            update.conflict = True
         add_item(update)
     except:
         if CONFIGURATION['debug']:
@@ -353,7 +350,6 @@ def apply_single_update(update):
         print 'ERROR - Update - Could not update: "%s"' % update
 
 
-# TODO: Split this to an outer function that gets the relevant update and an inner generic function which applies
 def apply_update(indices):
     """
     Calls the `apply` function on every update that needs to be applied, then removes said update.

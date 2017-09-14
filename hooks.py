@@ -45,13 +45,13 @@ class IDPHook(idaapi.IDP_Hooks):
 
     def renamed(self, ea, new_name, local_name):
         if CONFIGURATION[DEBUG]:
-            print 'DEBUG - Hooks - RenameIDPHook.renamed(ea = 0x%x, new_name = %s, local_name = %r)' % (
+            print 'DEBUG - Hooks - IDPHook.renamed(ea = 0x%x, new_name = %s, local_name = %r)' % (
                 ea, new_name, local_name)
 
         if ida_struct.is_member_id(ea) or ida_struct.get_struc(ea):
             # Change is either a built-in struct of a frame pointer, or some address
             # starting with 0xFF00 that happens to be a member address.
-            print 'INFO - Hooks - RenameIDPHook - Skipping a possible stack variable/built-in struct change'
+            print 'INFO - Hooks - IDPHook.Renamed - Skipping a possible stack variable/built-in struct change'
             return idaapi.IDP_Hooks.renamed(self, ea, new_name, local_name)
 
         if (g_hooks_enabled and
@@ -66,6 +66,32 @@ class IDPHook(idaapi.IDP_Hooks):
             send_push_update(name_update)
 
         return idaapi.IDP_Hooks.renamed(self, ea, new_name, local_name)
+
+    def make_data(self, ea, flags, tid, len):
+        # TID changes when data is changed using alt+Q
+        # Flags are:
+        # & 0xF00 - 0x400 for Data,
+        # & 0xF0000000 - 0x0 = Byte, 0x10000000 = Word, 0x20000000 = Dword, 0x50000000 = ASCII, 0xB0000000 = Alignment
+        if CONFIGURATION[DEBUG]:
+            print 'DEBUG - Hooks - IDPHook.make_data(ea = 0x%x, flags=0x%x, tid=0x%x, len=%d)' % (ea, flags, tid, len)
+
+        if g_hooks_enabled:
+            data_update = idb_push_ops.MakeDataUpdate(
+                update_type=idb_push_ops.UpdateTypes.MakeData,
+                address=ea,
+                data=len,
+                flags=flags,
+                data_type=flags & 0xF0000000
+            )
+            send_push_update(data_update)
+
+        return idaapi.IDP_Hooks.make_data(self, ea, flags, tid, len)
+
+    def make_code(self, ea, size):
+        if CONFIGURATION[DEBUG]:
+            print 'DEBUG - Hooks - IDPHook.make_code(ea = 0x%x, size=%d)' % (ea, size)
+
+        return idaapi.IDP_Hooks.make_code(self, ea, size)
 
 
 class IDBHook(idaapi.IDB_Hooks):
@@ -82,7 +108,7 @@ class IDBHook(idaapi.IDB_Hooks):
 
     def cmt_changed(self, ea, is_repeatable):
         if CONFIGURATION[DEBUG]:
-            print 'DEBUG - Hooks - CommentIDBHook.cmt_changed(arg0 = 0x%x, is_repeatable = %s)' % (ea, is_repeatable)
+            print 'DEBUG - Hooks - IDBHook.cmt_changed(arg0 = 0x%x, is_repeatable = %s)' % (ea, is_repeatable)
 
         if is_repeatable:
             data = psida_common.get_repeated_comment(ea)
@@ -104,7 +130,7 @@ class IDBHook(idaapi.IDB_Hooks):
 
     def area_cmt_changed(self, areas, area, comment, is_repeatable):
         if CONFIGURATION[DEBUG]:
-            print 'DEBUG - Hooks - CommentIDBHook.area_cmt_changed(area_start = 0x%x, comment = %s)' % (
+            print 'DEBUG - Hooks - IDBHook.area_cmt_changed(area_start = 0x%x, comment = %s)' % (
                 area.startEA, comment)
 
         ea = area.startEA
@@ -128,7 +154,7 @@ class IDBHook(idaapi.IDB_Hooks):
 
     def extra_cmt_changed(self, ea, line_idx, cmt):
         if CONFIGURATION[DEBUG]:
-            print 'DEBUG - Hooks - CommentIDBHook.extra_cmt_changed(ea = 0x%x, line_idx = %d, cmt = %s)' % (
+            print 'DEBUG - Hooks - IDBHook.extra_cmt_changed(ea = 0x%x, line_idx = %d, cmt = %s)' % (
                 ea, line_idx, cmt)
 
         if idaapi.E_PREV <= line_idx < idaapi.E_NEXT:
@@ -147,17 +173,17 @@ class IDBHook(idaapi.IDB_Hooks):
                 line_index=line_index)
         else:
             if CONFIGURATION[DEBUG]:
-                print 'DEBUG - Hooks - CommentIDBHook.extra_cmt_changed - unexpected line_idx, continuing...'
+                print 'DEBUG - Hooks - IDBHook.extra_cmt_changed - unexpected line_idx, continuing...'
             return idaapi.IDB_Hooks.extra_cmt_changed(self, ea, line_idx, cmt)
 
-        if g_hooks_enabled and (cmt is not None) and (len(cmt) > 0):  # TODO(alexei): ????
+        if g_hooks_enabled and (cmt is not None) and (len(cmt) > 0):
             send_push_update(line_update)
 
         return idaapi.IDB_Hooks.extra_cmt_changed(self, ea, line_idx, cmt)
 
     def struc_member_created(self, sptr, mptr):
         if CONFIGURATION[DEBUG]:
-            print 'DEBUG - Hooks - StructIDBHook.struc_member_created(sptr = %s, mptr = %s)' % (
+            print 'DEBUG - Hooks - IDBHook.struc_member_created(sptr = %s, mptr = %s)' % (
                 pprint.pformat(sptr), pprint.pformat(mptr))
 
         data = ida_struct.get_member_name(mptr.id)
@@ -169,12 +195,7 @@ class IDBHook(idaapi.IDB_Hooks):
                     offset=mptr.soff,
                     var_size=mptr.eoff - mptr.soff)
         else:
-            update = idb_push_ops.StructMemCreatedUpdate(
-                    update_type=idb_push_ops.UpdateTypes.StructMemberCreated,
-                    address=ida_frame.get_func_by_frame(sptr.id),
-                    data=data,
-                    offset=mptr.soff,
-                    var_size=mptr.eoff - mptr.soff)
+            return idaapi.IDB_Hooks.struc_member_created(self, sptr, mptr)
 
         if g_hooks_enabled and (data is not None) and (len(data) > 0):
             send_push_update(update)
@@ -183,7 +204,7 @@ class IDBHook(idaapi.IDB_Hooks):
 
     def struc_member_renamed(self, sptr, mptr):
         if CONFIGURATION[DEBUG]:
-            print 'DEBUG - Hooks - StructIDBHook.struc_member_renamed(sptr = %s, mptr = %s)' % (
+            print 'DEBUG - Hooks - IDBHook.struc_member_renamed(sptr = %s, mptr = %s)' % (
                 pprint.pformat(sptr), pprint.pformat(mptr))
 
         data = ida_struct.get_member_name(mptr.id)
@@ -195,17 +216,42 @@ class IDBHook(idaapi.IDB_Hooks):
                 offset=mptr.soff,
                 var_size=mptr.eoff - mptr.soff)
         else:
-            update = idb_push_ops.StructMemRenamedUpdate(
-                update_type=idb_push_ops.UpdateTypes.StructMemberRenamed,
-                address=ida_frame.get_func_by_frame(sptr.id),
-                data=data,
-                offset=mptr.soff,
-                var_size=mptr.eoff - mptr.soff)
+            return idaapi.IDB_Hooks.struc_member_created(self, sptr, mptr)
 
         if g_hooks_enabled and (data is not None) and (len(data) > 0):
             send_push_update(update)
 
         return idaapi.IDB_Hooks.struc_member_renamed(self, sptr, mptr)
+
+    def struc_expanded(self, sptr):
+        if CONFIGURATION[DEBUG]:
+            print 'DEBUG - Hooks - IDBHook.struc_expanded(sptr = %s)' % sptr
+
+        return idaapi.IDB_Hooks.struc_expanded(self, sptr)
+
+    def struc_member_changed(self, sptr, mptr):
+        if CONFIGURATION[DEBUG]:
+            print 'DEBUG - Hooks - IDBHook.struc_member_changed(sptr = %s, mptr = %s)' % (sptr, mptr)
+
+        return idaapi.IDB_Hooks.struc_member_changed(self, sptr, mptr)
+
+    def struc_created(self, struc_id):
+        if CONFIGURATION[DEBUG]:
+            print 'DEBUG - Hooks - IDBHook.struc_created(struc_id = 0x%x)' % struc_id
+
+        return idaapi.IDB_Hooks.struc_created(self, struc_id)
+
+    def struc_renamed(self, sptr):
+        if CONFIGURATION[DEBUG]:
+            print 'DEBUG - Hooks - IDBHook.struc_renamed(sptr = %s)' % sptr
+
+        return idaapi.IDB_Hooks.struc_renamed(self, sptr)
+
+    def changing_op_type(self, ea, n):
+        if CONFIGURATION[DEBUG]:
+            print 'DEBUG - Hooks - IDBHook.changing_op_type(ea = 0x%x, n=%d)' % (ea, n)
+
+        return idaapi.IDB_Hooks.changing_op_type(self, ea, n)
 
 
 class SendPointerFromContextMenu(idaapi.action_handler_t):

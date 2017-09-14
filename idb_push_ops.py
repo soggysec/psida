@@ -1,10 +1,12 @@
 import json
+import math
 
 import psida_common
 
 import idc
 import ida_struct
 import ida_nalt
+import ida_bytes
 
 import idb_push_config
 reload(idb_push_config)
@@ -13,10 +15,11 @@ from idb_push_config import *
 
 class UpdateTypes(object):
     (Name, Comment, RepeatableComment, AnteriorLine, PosteriorLine, LookHere, StackVariableRenamed,
-     StructMemberCreated, StructMemberRenamed) = range(9)
+     StructMemberCreated, StructMemberRenamed, StructCreated, MakeData) = range(11)
+
 
 UpdateTypesNames = ("Name", "Comment", "RComment", "AntLine", "PostLine", "LookHere",
-                    "StackVar", "StructMemCreated", "StructMemRenamed")
+                    "StackVar", "StructMemCreated", "StructMemRenamed", "StructCreated", "MakeData")
 
 
 class IdbUpdate(object):
@@ -81,6 +84,14 @@ class IdbUpdate(object):
         :return: (bool) Whether the update should be removed
         """
         pass
+
+    def has_conflict(self):
+        """
+        Checks if update has a conflicting data
+
+        :return: (boo) Whether the update has a conflict
+        """
+        return self.data_at_address is not None
 
 
 class CommentUpdate(IdbUpdate):
@@ -199,6 +210,114 @@ class StackVariableUpdate(IdbUpdate):
         return True
 
 
+class MakeDataUpdate(IdbUpdate):
+    ATTRIBUTES = ['user', 'project', 'address', 'data', 'update_type', 'flags', 'data_type']
+    TYPE_TO_SIZE = {
+        ida_bytes.FF_BYTE: 1,  # Byte
+        ida_bytes.FF_WORD: 2,  # Word
+        ida_bytes.FF_DWRD: 4,  # Dword
+        ida_bytes.FF_ASCI: 1,  # Ascii
+    }
+    TYPE_TO_FUNC = {
+        # TODO: Implement other data changes
+        ida_bytes.FF_BYTE: ida_bytes.doByte,
+        ida_bytes.FF_WORD: ida_bytes.doWord,
+        ida_bytes.FF_DWRD: ida_bytes.doDwrd,
+        ida_bytes.FF_ASCI: ida_bytes.doASCI
+    }
+    TYPE_TO_NAME = {
+        ida_bytes.FF_BYTE: "Byte",
+        ida_bytes.FF_WORD: "Word",
+        ida_bytes.FF_DWRD: "Dword",
+        ida_bytes.FF_ASCI: "ASCII Byte"
+    }
+
+    def __init__(self, **kwargs):
+        self.flags = None
+        self.data_type = None
+        super(MakeDataUpdate, self).__init__(**kwargs)
+
+    def __str__(self):
+        num = self._get_num_of_elements()
+        data = str(num) + " " + self.TYPE_TO_NAME[self.data_type]
+        if num > 1:
+            data += "s"
+        description = "%s [0x%x]: %s" % (UpdateTypesNames[self.update_type],
+                                         self.address,
+                                         data)
+        if self.data_at_address:
+            description += "\n(YOURS: %s)" % self.data_at_address
+        return description
+
+    def apply(self):
+        self._undefine_many()
+        if self.data_type in self.TYPE_TO_FUNC.keys():
+            self.TYPE_TO_FUNC[self.data_type](self.address, self.data)
+            return True
+        else:
+            raise Exception("ERORR - MakeDataUpdate - Apply - Unimplemented data update")
+
+    def get_conflict(self):
+        """
+
+        :return: None if there's no conflict, empty string if there's no change, data if there's a change.
+        """
+        # TODO: Fill docstring, plus, make the function return 0,1,2 and save the current data by itself.
+        code_address = self._has_code()
+        if code_address:
+            return 'Code: 0x%x' % code_address
+
+        num_of_elements = self._get_num_of_elements()
+
+        data_undefined = True
+        for i in xrange(self.data):
+            ea_flags = ida_bytes.getFlags(self.address + i)
+            if ea_flags & 0x400:  # Data defined
+                data_undefined = False
+        if data_undefined:
+            return None  # No conflict
+
+        # Iterate over all local data, and check if there's any conflict with the type
+        conflict = ''
+        for i in xrange(num_of_elements):
+            current_address = self.address + (i * self.TYPE_TO_SIZE[self.data_type])
+            current_address = ida_bytes.get_item_head(current_address)
+            ea_flags = ida_bytes.getFlags(current_address)
+            if not ida_bytes.isData(ea_flags):
+                conflict += 'unknown at 0x%x\n' % current_address
+                continue
+            current_data_type = ea_flags & ida_bytes.DT_TYPE
+            if self.data_type != current_data_type:  # Different data
+                conflict += '%s at 0x%x\n' % (self.TYPE_TO_NAME[current_data_type], current_address)
+        if conflict:
+            return conflict
+
+        # TODO: Deal with the case it's just multiple type definitions in the area?
+        return ''  # No difference
+
+
+    def _get_num_of_elements(self):
+        return self.data / self.TYPE_TO_SIZE[self.data_type]
+
+    def _has_code(self):
+        for i in xrange(self.data):
+            maybe_start_of_item = ida_bytes.get_item_head(self.address + i)
+            if ida_bytes.isCode(ida_bytes.getFlags(maybe_start_of_item)):
+                return self.address + i
+        return None
+
+    def _undefine_many(self):
+        ida_bytes.do_unknown_range(self.address, self.data, ida_bytes.DOUNK_SIMPLE)
+
+
+class StructCreatedUpdate(IdbUpdate):
+    pass
+
+
+class StructRenamedUpdate(IdbUpdate):
+    pass
+
+
 class StructMemCreatedUpdate(IdbUpdate):
     pass  # Not implemented yet
 
@@ -216,7 +335,9 @@ TYPE_TO_CLASS = {
     UpdateTypes.LookHere: LookHereUpdate,
     UpdateTypes.StackVariableRenamed: StackVariableUpdate,
     UpdateTypes.StructMemberCreated: StructMemCreatedUpdate,
-    UpdateTypes.StructMemberRenamed: StructMemRenamedUpdate
+    UpdateTypes.StructMemberRenamed: StructMemRenamedUpdate,
+    UpdateTypes.StructCreated: StructCreatedUpdate,
+    UpdateTypes.MakeData: MakeDataUpdate
 }
 
 
