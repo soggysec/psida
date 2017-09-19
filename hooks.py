@@ -35,24 +35,31 @@ def send_push_update(update):
                                  update.to_dict())
 
 
-class IDPHook(idaapi.IDP_Hooks):
+class IDBHook(idaapi.IDB_Hooks):
     """
+    A class used to override hooks in IDB_Hooks module:
+        cmt_changed - Invoked on every comment or repeatable comment change in the IDB
+        area_cmt_changed - # TODO
+        extra_cmt_changed - Invoked on every anterior or posterior comment change in the IDB
+        struc_member_created - Invoked on every struct member creation (Including new stack variables)
+        struc_member_renamed - Invoked on every struct member rename (Including stack variables)
     A class used to override hooks in IDP_Hooks module:
         renamed - Invoked on every name change in the IDB - address, function, struct, stack.
     """
     def __init__(self):
-        idaapi.IDP_Hooks.__init__(self)
+        idaapi.IDB_Hooks.__init__(self)
 
     def renamed(self, ea, new_name, local_name):
         if CONFIGURATION[DEBUG]:
-            print 'DEBUG - Hooks - IDPHook.renamed(ea = 0x%x, new_name = %s, local_name = %r)' % (
+            print 'DEBUG - Hooks - IDBHook.renamed(ea = 0x%x, new_name = %s, local_name = %r)' % (
                 ea, new_name, local_name)
 
         if ida_struct.is_member_id(ea) or ida_struct.get_struc(ea):
             # Change is either a built-in struct of a frame pointer, or some address
             # starting with 0xFF00 that happens to be a member address.
-            print 'INFO - Hooks - IDPHook.Renamed - Skipping a possible stack variable/built-in struct change'
-            return idaapi.IDP_Hooks.renamed(self, ea, new_name, local_name)
+
+            print 'INFO - Hooks - IDBHook.Renamed - Skipping a possible stack variable/built-in struct change'
+            return idaapi.IDB_Hooks.renamed(self, ea, new_name, local_name)
 
         if (g_hooks_enabled and
                 (new_name is not None) and
@@ -65,7 +72,7 @@ class IDPHook(idaapi.IDP_Hooks):
                 is_local=local_name)
             send_push_update(name_update)
 
-        return idaapi.IDP_Hooks.renamed(self, ea, new_name, local_name)
+        return idaapi.IDB_Hooks.renamed(self, ea, new_name, local_name)
 
     def make_data(self, ea, flags, tid, len):
         # TID changes when data is changed using alt+Q
@@ -73,7 +80,7 @@ class IDPHook(idaapi.IDP_Hooks):
         # & 0xF00 - 0x400 for Data,
         # & 0xF0000000 - 0x0 = Byte, 0x10000000 = Word, 0x20000000 = Dword, 0x50000000 = ASCII, 0xB0000000 = Alignment
         if CONFIGURATION[DEBUG]:
-            print 'DEBUG - Hooks - IDPHook.make_data(ea = 0x%x, flags=0x%x, tid=0x%x, len=%d)' % (ea, flags, tid, len)
+            print 'DEBUG - Hooks - IDBHook.make_data(ea = 0x%x, flags=0x%x, tid=0x%x, len=%d)' % (ea, flags, tid, len)
 
         if g_hooks_enabled:
             data_update = idb_push_ops.MakeDataUpdate(
@@ -85,26 +92,13 @@ class IDPHook(idaapi.IDP_Hooks):
             )
             send_push_update(data_update)
 
-        return idaapi.IDP_Hooks.make_data(self, ea, flags, tid, len)
+        return idaapi.IDB_Hooks.make_data(self, ea, flags, tid, len)
 
     def make_code(self, ea, size):
         if CONFIGURATION[DEBUG]:
-            print 'DEBUG - Hooks - IDPHook.make_code(ea = 0x%x, size=%d)' % (ea, size)
+            print 'DEBUG - Hooks - IDBHook.make_code(ea = 0x%x, size=%d)' % (ea, size)
 
-        return idaapi.IDP_Hooks.make_code(self, ea, size)
-
-
-class IDBHook(idaapi.IDB_Hooks):
-    """
-    A class used to override hooks in IDB_Hooks module:
-        cmt_changed - Invoked on every comment or repeatable comment change in the IDB
-        area_cmt_changed - # TODO
-        extra_cmt_changed - Invoked on every anterior or posterior comment change in the IDB
-        struc_member_created - Invoked on every struct member creation (Including new stack variables)
-        struc_member_renamed - Invoked on every struct member rename (Including stack variables)
-    """
-    def __init__(self):
-        idaapi.IDB_Hooks.__init__(self)
+        return idaapi.IDB_Hooks.make_code(self, ea, size)
 
     def cmt_changed(self, ea, is_repeatable):
         if CONFIGURATION[DEBUG]:
@@ -128,12 +122,12 @@ class IDBHook(idaapi.IDB_Hooks):
 
         return idaapi.IDB_Hooks.cmt_changed(self, ea, is_repeatable)
 
-    def area_cmt_changed(self, areas, area, comment, is_repeatable):
+    def range_cmt_changed(self, areas, cmt_range, comment, is_repeatable):
         if CONFIGURATION[DEBUG]:
-            print 'DEBUG - Hooks - IDBHook.area_cmt_changed(area_start = 0x%x, comment = %s)' % (
-                area.startEA, comment)
+            print 'DEBUG - Hooks - IDBHook.range_cmt_changed(area_start = 0x%x, comment = %s)' % (
+                cmt_range.start_ea, comment)
 
-        ea = area.startEA
+        ea = cmt_range.start_ea
         if is_repeatable:
             data = psida_common.get_repeated_comment(ea)
             comment_update = idb_push_ops.CommentUpdate(
@@ -150,7 +144,7 @@ class IDBHook(idaapi.IDB_Hooks):
         if g_hooks_enabled and (data is not None) and (len(data) > 0):
             send_push_update(comment_update)
 
-        return idaapi.IDB_Hooks.area_cmt_changed(self, areas, area, comment, is_repeatable)
+        return idaapi.IDB_Hooks.range_cmt_changed(self, areas, cmt_range, comment, is_repeatable)
 
     def extra_cmt_changed(self, ea, line_idx, cmt):
         if CONFIGURATION[DEBUG]:
@@ -158,25 +152,23 @@ class IDBHook(idaapi.IDB_Hooks):
                 ea, line_idx, cmt)
 
         if idaapi.E_PREV <= line_idx < idaapi.E_NEXT:
-            line_index = line_idx - idaapi.E_PREV
             line_update = idb_push_ops.PostAntLineUpdate(
                 update_type=idb_push_ops.UpdateTypes.AnteriorLine,
                 address=ea,
                 data=cmt,
-                line_index=line_index)
+                line_index=line_idx)
         elif line_idx >= idaapi.E_NEXT:
-            line_index = line_idx - idaapi.E_NEXT
             line_update = idb_push_ops.PostAntLineUpdate(
                 update_type=idb_push_ops.UpdateTypes.PosteriorLine,
                 address=ea,
                 data=cmt,
-                line_index=line_index)
+                line_index=line_idx)
         else:
             if CONFIGURATION[DEBUG]:
                 print 'DEBUG - Hooks - IDBHook.extra_cmt_changed - unexpected line_idx, continuing...'
             return idaapi.IDB_Hooks.extra_cmt_changed(self, ea, line_idx, cmt)
 
-        if g_hooks_enabled and (cmt is not None) and (len(cmt) > 0):
+        if g_hooks_enabled and (cmt is not None) and (len(cmt) > 0) and (cmt != ' '):
             send_push_update(line_update)
 
         return idaapi.IDB_Hooks.extra_cmt_changed(self, ea, line_idx, cmt)
@@ -247,11 +239,11 @@ class IDBHook(idaapi.IDB_Hooks):
 
         return idaapi.IDB_Hooks.struc_renamed(self, sptr)
 
-    def changing_op_type(self, ea, n):
+    def changing_op_type(self, ea, n, opinfo):
         if CONFIGURATION[DEBUG]:
-            print 'DEBUG - Hooks - IDBHook.changing_op_type(ea = 0x%x, n=%d)' % (ea, n)
+            print 'DEBUG - Hooks - IDBHook.changing_op_type(ea = 0x%x, n=%d, opinfo=%s)' % (ea, n, opinfo)
 
-        return idaapi.IDB_Hooks.changing_op_type(self, ea, n)
+        return idaapi.IDB_Hooks.changing_op_type(self, ea, n, opinfo)
 
 
 class SendPointerFromContextMenu(idaapi.action_handler_t):
@@ -270,7 +262,8 @@ class SendPointerFromContextMenu(idaapi.action_handler_t):
         return 1
 
     def update(self, ctx):
-        return idaapi.AST_ENABLE_FOR_FORM if ctx.form_type == idaapi.BWN_DISASM else idaapi.AST_DISABLE_FOR_FORM
+
+        return idaapi.AST_ENABLE_FOR_WIDGET if ctx.form_type == idaapi.BWN_DISASM else idaapi.AST_DISABLE_FOR_WIDGET
 
 
 class IDBPushUIHooks(idaapi.UI_Hooks):

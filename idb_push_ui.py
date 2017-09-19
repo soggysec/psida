@@ -4,6 +4,8 @@ import idc
 import ida_struct
 import ida_frame
 import ida_bytes
+import ida_lines
+import ida_kernwin
 from idaapi import PluginForm
 from PyQt5 import QtGui, QtCore, QtWidgets
 
@@ -185,7 +187,7 @@ def update_form(update):
         current_data = None
 
         if message_type == idb_push_ops.UpdateTypes.Name:
-            current_data = psida_common.get_non_default_name(address)
+            current_data = psida_common.get_non_default_name(address, update.is_local)
             if current_data == update.data:
                 return
 
@@ -199,13 +201,8 @@ def update_form(update):
             if current_data == update.data:
                 return
 
-        elif message_type == idb_push_ops.UpdateTypes.AnteriorLine:
-            current_data = idc.LineA(address, update.line_index)
-            if current_data == update.data:
-                return
-
-        elif message_type == idb_push_ops.UpdateTypes.PosteriorLine:
-            current_data = idc.LineB(address, update.line_index)
+        elif message_type in [idb_push_ops.UpdateTypes.AnteriorLine, idb_push_ops.UpdateTypes.PosteriorLine]:
+            current_data = idc.get_extra_cmt(address, update.line_index)
             if current_data == update.data:
                 return
 
@@ -389,7 +386,7 @@ def apply_update(indices):
                 g_identifiers_to_updates.pop(update.get_identifier())
                 removed_rows += 1
 
-        idc.Refresh()
+        ida_kernwin.request_refresh(ida_kernwin.IWID_IDAMEMOS)
     except:
         traceback.print_exc()
 

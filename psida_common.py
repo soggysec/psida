@@ -8,9 +8,15 @@ __author__ = 'Alexei'
 try:
     import idc
     import idautils
-except:
+    import ida_name
+    import ida_funcs
+    import ida_bytes
+except ImportError:
     idc = None
     idautils = None
+    ida_name = None
+    ida_funcs = None
+    ida_bytes = None
 
 VALID_CHARACTERS = string.printable[:-6]
 
@@ -95,11 +101,11 @@ def get_segments():
 
 
 def is_function_start(address):
-    return idc.GetFunctionAttr(address, idc.FUNCATTR_START) == address
+    return idc.first_func_chunk(address) == address
 
 
 def get_comment(address):
-    comment = idc.Comment(address)
+    comment = ida_bytes.get_cmt(address, 0)
     if comment is None or 0 == len(comment):
         return None
     return comment
@@ -109,14 +115,15 @@ def set_comment(address, comment):
     assert type(comment) == str
 
     # Always succeeds
-    idc.MakeComm(address, comment)
+    ida_bytes.set_cmt(address, comment, 0)
 
 
 def get_repeated_comment(address):
     if is_function_start(address):
-        repeated_comment = idc.GetFunctionCmt(address, 1)
+        pfn = ida_funcs.get_func(address)
+        repeated_comment = ida_funcs.get_func_cmt(pfn, 1)
     else:
-        repeated_comment = idc.RptCmt(address)
+        repeated_comment = ida_bytes.get_cmt(address, 1)
 
     if repeated_comment is None or len(repeated_comment) == 0:
         return None
@@ -126,13 +133,17 @@ def get_repeated_comment(address):
 def set_repeated_comment(address, repeated_comment):
     assert type(repeated_comment) == str
     if is_function_start(address):
-        idc.SetFunctionCmt(address, repeated_comment, 1)
+        pfn = ida_funcs.get_func(address)
+        ida_funcs.set_func_cmt(pfn, repeated_comment, 1)
     else:
-        idc.MakeRptCmt(address, repeated_comment)
+        ida_bytes.set_cmt(address, repeated_comment, 1)
 
 
-def get_non_default_name(address):
-    name = idc.NameEx(address, address)
+def get_non_default_name(address, is_local=False):
+    flags = 0
+    if is_local:
+        flags = flags | idc.GN_LOCAL
+    name = idc.get_name(address, flags)
     if name is not None and len(name) > 0 and not is_default_name(name):
         return name
     return None
@@ -141,13 +152,17 @@ def get_non_default_name(address):
 def set_name(address, new_name, local):
     assert type(new_name) == str
 
-    current_name_location = idc.LocByNameEx(address, new_name)
+    is_hidden = idc.is_tail(idc.get_full_flags(address))
+
+    if is_hidden:
+        print "0x%x: can't rename byte as '%s' because the address is not visible" % (address, new_name)
+        return False
 
     flags = idc.SN_CHECK | idc.SN_NOWARN
     if local:
         flags = flags | idc.SN_LOCAL
 
-    ret = idc.MakeNameEx(address, new_name, flags)
+    ret = ida_name.set_name(address, new_name, flags)
 
     if ret is False:
         print "0x%x: can't rename byte as '%s' because the name is already used at 0x%x" % (address,
