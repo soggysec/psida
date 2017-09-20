@@ -19,8 +19,7 @@ if CONFIGURATION[DEBUG]:
     reload(idb_push_ui)
     reload(idb_push_ops)
 
-# Globals for holding IDB and IDP hook currently registered
-g_idp_hook = hooks.IDPHook()
+# Globals for holding hooks currently registered
 g_idb_hook = hooks.IDBHook()
 
 # Holds the current thread running for receiving incoming updates
@@ -83,9 +82,6 @@ def start():
     # open global socket
     hooks.g_zmq_socket = zmq_primitives.zmq_open_pub_socket()  # default arguments
 
-    if not g_idp_hook.hook():
-        raise Exception('IDPHook installation FAILED')
-
     if not g_idb_hook.hook():
         raise Exception('IDBHook installation FAILED')
 
@@ -107,7 +103,6 @@ def start():
 
 def _remove_hooks_and_stop_thread():
     hooks.g_hooks_enabled = False
-    g_idp_hook.unhook()
     g_idb_hook.unhook()
 
     global g_receive_thread
@@ -139,5 +134,4 @@ def stop(reason=None):
 
     global g_form
     if g_form is not None and reason != idaapi.NW_TERMIDA:
-        g_form.Close(idaapi.PluginForm.FORM_SAVE)
-
+        g_form.Close(idaapi.PluginForm.WOPN_RESTORE)
