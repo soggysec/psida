@@ -8,18 +8,19 @@ import ida_struct
 import ida_nalt
 import ida_bytes
 
-import idb_push_config
-reload(idb_push_config)
+
 from idb_push_config import *
+CONFIGURATION = get_configuration()
 
 
 class UpdateTypes(object):
     (Name, Comment, RepeatableComment, AnteriorLine, PosteriorLine, LookHere, StackVariableRenamed,
-     StructMemberCreated, StructMemberRenamed, StructCreated, MakeData) = range(11)
+     StructMemberCreated, StructMemberRenamed, StructCreated, MakeData, MakeCode) = range(12)
 
 
 UpdateTypesNames = ("Name", "Comment", "RComment", "AntLine", "PostLine", "LookHere",
-                    "StackVar", "StructMemCreated", "StructMemRenamed", "StructCreated", "MakeData")
+                    "StackVar", "StructMemCreated", "StructMemRenamed", "StructCreated",
+                    "MakeData", "MakeCode")
 
 
 class IdbUpdate(object):
@@ -62,9 +63,10 @@ class IdbUpdate(object):
         """
         :return: (str) A description to appear in UI
         """
-        description = "%s [0x%x]: %s" % (UpdateTypesNames[self.update_type],
-                                         self.address,
-                                         self.data)
+        description = "%s [0x%x]" % (UpdateTypesNames[self.update_type],
+                                     self.address)
+        if self.data:
+            description += ": " + self.data
         if self.data_at_address:
             description += "\n(YOURS: %s)" % self.data_at_address
         return description
@@ -241,7 +243,7 @@ class MakeDataUpdate(IdbUpdate):
         return description
 
     def apply(self):
-        # TODO: Throw this in common
+        # TODO: Used twice. Throw this in common?
         ida_bytes.del_items(self.address, ida_bytes.DELIT_SIMPLE, self.data)
 
         if self.data_type == ida_bytes.FF_STRLIT:
@@ -295,10 +297,64 @@ class MakeDataUpdate(IdbUpdate):
         return self.data / self.TYPE_TO_SIZE[self.data_type]
 
     def _has_code(self):
+        """
+        Checks if any address in the changed data area has code in it
+
+        :return: (int) address of the code start, or None.
+        """
         for i in xrange(self.data):
             maybe_start_of_item = ida_bytes.get_item_head(self.address + i)
             if ida_bytes.is_code(ida_bytes.get_full_flags(maybe_start_of_item)):
                 return self.address + i
+        return None
+
+
+class MakeCodeUpdate(IdbUpdate):
+    # TODO: Used twice, make it global? Or in common?
+    TYPE_TO_NAME = {
+        ida_bytes.FF_BYTE: "Byte",
+        ida_bytes.FF_WORD: "Word",
+        ida_bytes.FF_DWORD: "Dword",
+        ida_bytes.FF_STRLIT: "String Byte"
+    }
+
+    def __init__(self, **kwargs):
+        super(MakeCodeUpdate, self).__init__(**kwargs)
+
+    def __str__(self):
+        description = "%s [0x%x-0x%x]" % (UpdateTypesNames[self.update_type],
+                                          self.address, int(self.address) + self.data)
+        if self.data_at_address:
+            description += "\n(YOURS: %s)" % self.data_at_address
+        return description
+
+    def apply(self):
+        if self.data_at_address:
+            ida_bytes.del_items(self.address, ida_bytes.DELIT_SIMPLE)
+        idc.create_insn(self.address)
+        return True
+
+    def get_conflict(self):
+        """
+
+        :return: None if there's no conflict, empty string if there's no change, data if there's a change.
+        """
+        # TODO: Fill docstring, plus, make the function return 0,1,2 and save the current data by itself.
+        conflicts = ""
+        conflict_flag = False
+        for i in xrange(self.data):
+            current_address = self.address + i
+            head_address = ida_bytes.get_item_head(current_address)
+            if ida_bytes.is_code(ida_bytes.get_full_flags(head_address)):
+                conflict_flag = True
+            ea_flags = ida_bytes.get_full_flags(head_address)
+            if not ida_bytes.is_data(ea_flags):
+                continue
+            conflict_flag = True
+            conflicts += '%s at 0x%x\n' % (self.TYPE_TO_NAME[ea_flags & ida_bytes.DT_TYPE], head_address)
+
+        if conflict_flag:
+            return conflicts
         return None
 
 
@@ -329,7 +385,8 @@ TYPE_TO_CLASS = {
     UpdateTypes.StructMemberCreated: StructMemCreatedUpdate,
     UpdateTypes.StructMemberRenamed: StructMemRenamedUpdate,
     UpdateTypes.StructCreated: StructCreatedUpdate,
-    UpdateTypes.MakeData: MakeDataUpdate
+    UpdateTypes.MakeData: MakeDataUpdate,
+    UpdateTypes.MakeCode: MakeCodeUpdate,
 }
 
 

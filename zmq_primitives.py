@@ -1,9 +1,9 @@
 import pprint
 import random
 import time
-import idb_push_config
-reload(idb_push_config)
-from idb_push_ops import *
+
+from idb_push_config import *
+CONFIGURATION = get_configuration()
 
 try:
     import zmq

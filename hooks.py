@@ -8,9 +8,10 @@ import ida_struct
 import psida_common
 import zmq_primitives
 import idb_push_ops
-import idb_push_config
-reload(idb_push_config)
+
 from idb_push_config import *
+CONFIGURATION = get_configuration()
+
 # Reload hack for debug sessions
 if CONFIGURATION[DEBUG]:
     reload(psida_common)
@@ -74,31 +75,39 @@ class IDBHook(idaapi.IDB_Hooks):
 
         return idaapi.IDB_Hooks.renamed(self, ea, new_name, local_name)
 
-    def make_data(self, ea, flags, tid, len):
+    def make_data(self, ea, flags, tid, length):
         # TID changes when data is changed using alt+Q
         # Flags are:
         # & 0xF00 - 0x400 for Data,
         # & 0xF0000000 - 0x0 = Byte, 0x10000000 = Word, 0x20000000 = Dword, 0x50000000 = ASCII, 0xB0000000 = Alignment
         if CONFIGURATION[DEBUG]:
-            print 'DEBUG - Hooks - IDBHook.make_data(ea = 0x%x, flags=0x%x, tid=0x%x, len=%d)' % (ea, flags, tid, len)
+            print 'DEBUG - Hooks - IDBHook.make_data(ea = 0x%x, flags=0x%x, tid=0x%x, len=%d)' % (ea, flags, tid, length)
 
         if g_hooks_enabled:
             data_update = idb_push_ops.MakeDataUpdate(
                 update_type=idb_push_ops.UpdateTypes.MakeData,
                 address=ea,
-                data=len,
+                data=length,
                 flags=flags,
                 data_type=flags & 0xF0000000
             )
             send_push_update(data_update)
 
-        return idaapi.IDB_Hooks.make_data(self, ea, flags, tid, len)
+        return idaapi.IDB_Hooks.make_data(self, ea, flags, tid, length)
 
-    def make_code(self, ea, size):
+    def make_code(self, insn):
         if CONFIGURATION[DEBUG]:
-            print 'DEBUG - Hooks - IDBHook.make_code(ea = 0x%x, size=%d)' % (ea, size)
+            print 'DEBUG - Hooks - IDBHook.make_code(insn = %s)' % insn
 
-        return idaapi.IDB_Hooks.make_code(self, ea, size)
+        if g_hooks_enabled:
+            code_update = idb_push_ops.MakeCodeUpdate(
+                update_type=idb_push_ops.UpdateTypes.MakeCode,
+                address=insn.ea,
+                data=insn.size,
+            )
+            send_push_update(code_update)
+
+        return idaapi.IDB_Hooks.make_code(self, insn)
 
     def cmt_changed(self, ea, is_repeatable):
         if CONFIGURATION[DEBUG]:

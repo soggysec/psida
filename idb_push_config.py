@@ -101,4 +101,8 @@ def set_configuration():
             traceback.print_exc()
 
 
+def get_configuration():
+    return CONFIGURATION
+
+
 set_configuration()
