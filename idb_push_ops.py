@@ -7,6 +7,7 @@ import idc
 import ida_struct
 import ida_nalt
 import ida_bytes
+import ida_funcs
 
 
 from idb_push_config import *
@@ -15,12 +16,12 @@ CONFIGURATION = get_configuration()
 
 class UpdateTypes(object):
     (Name, Comment, RepeatableComment, AnteriorLine, PosteriorLine, LookHere, StackVariableRenamed,
-     StructMemberCreated, StructMemberRenamed, StructCreated, MakeData, MakeCode) = range(12)
+     StructMemberCreated, StructMemberRenamed, StructCreated, MakeData, MakeCode, MakeFunc) = range(13)
 
 
 UpdateTypesNames = ("Name", "Comment", "RComment", "AntLine", "PostLine", "LookHere",
                     "StackVar", "StructMemCreated", "StructMemRenamed", "StructCreated",
-                    "MakeData", "MakeCode")
+                    "MakeData", "MakeCode", "MakeFunc")
 
 
 class IdbUpdate(object):
@@ -358,6 +359,27 @@ class MakeCodeUpdate(IdbUpdate):
         return None
 
 
+class MakeFuncUpdate(IdbUpdate):
+    def __init__(self, **kwargs):
+        super(MakeFuncUpdate, self).__init__(**kwargs)
+
+    def apply(self):
+        if self.data_at_address:
+            ida_bytes.del_items(self.address, ida_bytes.DELIT_SIMPLE)
+        idc.add_func(self.address)
+        return True
+
+    def get_conflict(self):
+        """
+
+        :return: None if there's no conflict, empty string if there's no change, data if there's a change.
+        """
+        # TODO: Fill docstring, plus, make the function return 0,1,2 and save the current data by itself.
+        if not idc.get_func_name(self.address):
+            return None
+        return ''
+
+
 class StructCreatedUpdate(IdbUpdate):
     pass  # Not implemented yet
 
@@ -387,6 +409,7 @@ TYPE_TO_CLASS = {
     UpdateTypes.StructCreated: StructCreatedUpdate,
     UpdateTypes.MakeData: MakeDataUpdate,
     UpdateTypes.MakeCode: MakeCodeUpdate,
+    UpdateTypes.MakeFunc: MakeFuncUpdate
 }
 
 

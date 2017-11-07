@@ -234,7 +234,8 @@ def update_form(update):
             else:
                 update.new = True
 
-        elif message_type in [idb_push_ops.UpdateTypes.MakeData, idb_push_ops.UpdateTypes.MakeCode]:
+        elif message_type in [idb_push_ops.UpdateTypes.MakeData, idb_push_ops.UpdateTypes.MakeCode,
+                              idb_push_ops.UpdateTypes.MakeFunc]:
             current_data = update.get_conflict()
             if current_data == '':
                 return

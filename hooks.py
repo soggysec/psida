@@ -109,9 +109,23 @@ class IDBHook(idaapi.IDB_Hooks):
 
         return idaapi.IDB_Hooks.make_code(self, insn)
 
+    def func_added(self, pfn):
+        if CONFIGURATION[DEBUG]:
+            print 'DEBUG - Hooks - IDBHook.func_added(pfn = %s)' % pfn
+
+        if g_hooks_enabled:
+            func_update = idb_push_ops.MakeFuncUpdate(
+                update_type=idb_push_ops.UpdateTypes.MakeFunc,
+                address=pfn.start_ea,
+                data=''
+            )
+            send_push_update(func_update)
+
+        return idaapi.IDB_Hooks.func_added(self, pfn)
+
     def cmt_changed(self, ea, is_repeatable):
         if CONFIGURATION[DEBUG]:
-            print 'DEBUG - Hooks - IDBHook.cmt_changed(arg0 = 0x%x, is_repeatable = %s)' % (ea, is_repeatable)
+            print 'DEBUG - Hooks - IDBHook.cmt_changed(ea = 0x%x, is_repeatable = %s)' % (ea, is_repeatable)
 
         if is_repeatable:
             data = psida_common.get_repeated_comment(ea)
