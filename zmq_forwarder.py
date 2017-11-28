@@ -1,31 +1,13 @@
-import win32service
-import servicemanager
+#import win32service
+#import servicemanager
+#import win32serviceutil
 import socket
-import win32serviceutil
 import zmq
 
 # Note that this service can't stop.
 
 SUB_PORT = 5559
 PUB_PORT = 5560
-
-
-class AppServerSvc(win32serviceutil.ServiceFramework):
-    _svc_name_ = "ZMQForwarder"
-    _svc_display_name_ = "ZeroMQ Forwarder Service"
-
-    def __init__(self, args):
-        win32serviceutil.ServiceFramework.__init__(self, args)
-        socket.setdefaulttimeout(60)
-
-    def SvcStop(self):
-        self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
-
-    def SvcDoRun(self):
-        servicemanager.LogMsg(servicemanager.EVENTLOG_INFORMATION_TYPE,
-                              servicemanager.PYS_SERVICE_STARTED,
-                              (self._svc_name_, ''))
-        forwarder()
 
 
 def forwarder():
@@ -53,4 +35,4 @@ def forwarder():
 
 
 if __name__ == '__main__':
-    win32serviceutil.HandleCommandLine(AppServerSvc)
+    forwarder()

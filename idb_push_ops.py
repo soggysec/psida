@@ -7,19 +7,21 @@ import idc
 import ida_struct
 import ida_nalt
 import ida_bytes
+import ida_funcs
 
-import idb_push_config
-reload(idb_push_config)
+
 from idb_push_config import *
+CONFIGURATION = get_configuration()
 
 
 class UpdateTypes(object):
     (Name, Comment, RepeatableComment, AnteriorLine, PosteriorLine, LookHere, StackVariableRenamed,
-     StructMemberCreated, StructMemberRenamed, StructCreated, MakeData) = range(11)
+     StructMemberCreated, StructMemberRenamed, StructCreated, MakeData, MakeCode, MakeFunc) = range(13)
 
 
 UpdateTypesNames = ("Name", "Comment", "RComment", "AntLine", "PostLine", "LookHere",
-                    "StackVar", "StructMemCreated", "StructMemRenamed", "StructCreated", "MakeData")
+                    "StackVar", "StructMemCreated", "StructMemRenamed", "StructCreated",
+                    "MakeData", "MakeCode", "MakeFunc")
 
 
 class IdbUpdate(object):
@@ -36,12 +38,12 @@ class IdbUpdate(object):
         if 'user' not in kwargs:
             self.user = CONFIGURATION[USER]
         if 'project' not in kwargs:
-            self.project = os.path.basename(idc.GetIdbPath())
+            self.project = idc.GetInputMD5()
 
         for attribute_name in self.ATTRIBUTES:
             if self.__getattribute__(attribute_name) is None:
                 if attribute_name not in kwargs:
-                    raise Exception("ERROR - Ops - Required attribute name %s does not appear in arguments")
+                    raise Exception("ERROR - Ops - Required attribute name %s does not appear in arguments" % attribute_name)
                 self.__setattr__(attribute_name, kwargs[attribute_name])
 
     def to_dict(self):
@@ -56,15 +58,16 @@ class IdbUpdate(object):
 
         :return: None
         """
-        idc.Jump(self.address)
+        idc.jumpto(self.address)
 
     def __str__(self):
         """
         :return: (str) A description to appear in UI
         """
-        description = "%s [0x%x]: %s" % (UpdateTypesNames[self.update_type],
-                                         self.address,
-                                         self.data)
+        description = "%s [0x%x]" % (UpdateTypesNames[self.update_type],
+                                     self.address)
+        if self.data:
+            description += ": " + self.data
         if self.data_at_address:
             description += "\n(YOURS: %s)" % self.data_at_address
         return description
@@ -128,6 +131,10 @@ class PostAntLineUpdate(IdbUpdate):
     def __init__(self, **kwargs):
         self.line_index = None
         super(PostAntLineUpdate, self).__init__(**kwargs)
+        if self.update_type == UpdateTypes.AnteriorLine:
+            self.base = idc.E_PREV
+        else:
+            self.base = idc.E_NEXT
 
     def get_identifier(self):
         return self.address, self.update_type, self.line_index
@@ -136,40 +143,28 @@ class PostAntLineUpdate(IdbUpdate):
         """
         :return: (str) A description to appear in UI
         """
-        description = "%s [0x%x] [%d]: %s" % (UpdateTypesNames[self.update_type],
-                                              self.line_index,
-                                              self.address,
-                                              self.data)
+        line_num = self.line_index - self.base
+        description = "%s [Line: %d] [%d]: %s" % (UpdateTypesNames[self.update_type],
+                                                  line_num,
+                                                  self.address,
+                                                  self.data)
         if self.data_at_address:
             description += "\n(YOURS: %s)" % self.data_at_address
         return description
 
     def apply(self):
-        line_index = self.line_index
-        if self.update_type == UpdateTypes.AnteriorLine:
-            # in order for line i to be displayed all lines before i
-            # must be non-empty
-            for i in xrange(0, line_index):
-                line = idc.LineA(self.address, i)
-                if line is None or len(line) == 0:
-                    idc.ExtLinA(self.address, i, " ")
+        for i in xrange(self.base, self.line_index):
+            line = idc.get_extra_cmt(self.address, i)
+            if line is None or len(line) == 0:
+                idc.update_extra_cmt(self.address, i, " ")
 
-            idc.ExtLinA(self.address, line_index, self.data)
-
-        elif self.update_type == UpdateTypes.PosteriorLine:
-            # in order for line i to be displayed all lines before i
-            # must be non-empty
-            for i in xrange(0, line_index):
-                line = idc.LineB(self.address, i)
-                if line is None or len(line) == 0:
-                    idc.ExtLinB(self.address, i, ' ')
-
-            idc.ExtLinB(self.address, line_index, self.data)
+        idc.update_extra_cmt(self.address, self.line_index, self.data)
         return True
 
 
 class LookHereUpdate(IdbUpdate):
     def __init__(self, **kwargs):
+        kwargs.update({'data':''})
         super(LookHereUpdate, self).__init__(**kwargs)
 
     def __str__(self):
@@ -186,7 +181,7 @@ class LookHereUpdate(IdbUpdate):
 
 
 class StackVariableUpdate(IdbUpdate):
-    ATTRIBUTES = ['user', 'project', 'address', 'data', 'update_type', 'func_frame_pointer', 'offset', 'new', 'var_size']
+    ATTRIBUTES = ['user', 'project', 'address', 'data', 'update_type', 'offset', 'var_size']
 
     def __init__(self, **kwargs):
         self.func_frame_pointer = None
@@ -204,7 +199,7 @@ class StackVariableUpdate(IdbUpdate):
     def apply(self):
         func_frame = self.func_frame_pointer
         if self.new:
-            ida_struct.add_struc_member(func_frame, self.data, self.offset, 0, ida_nalt.opinfo_t(), self.data.var_size)
+            ida_struct.add_struc_member(func_frame, self.data, self.offset, 0, ida_nalt.opinfo_t(), self.var_size)
         else:
             ida_struct.set_member_name(func_frame, self.offset, self.data)
         return True
@@ -215,21 +210,21 @@ class MakeDataUpdate(IdbUpdate):
     TYPE_TO_SIZE = {
         ida_bytes.FF_BYTE: 1,  # Byte
         ida_bytes.FF_WORD: 2,  # Word
-        ida_bytes.FF_DWRD: 4,  # Dword
-        ida_bytes.FF_ASCI: 1,  # Ascii
+        ida_bytes.FF_DWORD: 4,  # Dword
+        ida_bytes.FF_STRLIT: 1,  # Ascii
     }
     TYPE_TO_FUNC = {
         # TODO: Implement other data changes
-        ida_bytes.FF_BYTE: ida_bytes.doByte,
-        ida_bytes.FF_WORD: ida_bytes.doWord,
-        ida_bytes.FF_DWRD: ida_bytes.doDwrd,
-        ida_bytes.FF_ASCI: ida_bytes.doASCI
+        ida_bytes.FF_BYTE: ida_bytes.create_byte,
+        ida_bytes.FF_WORD: ida_bytes.create_word,
+        ida_bytes.FF_DWORD: ida_bytes.create_dword,
+        ida_bytes.FF_STRLIT: ida_bytes.create_strlit
     }
     TYPE_TO_NAME = {
         ida_bytes.FF_BYTE: "Byte",
         ida_bytes.FF_WORD: "Word",
-        ida_bytes.FF_DWRD: "Dword",
-        ida_bytes.FF_ASCI: "ASCII Byte"
+        ida_bytes.FF_DWORD: "Dword",
+        ida_bytes.FF_STRLIT: "String Byte"
     }
 
     def __init__(self, **kwargs):
@@ -250,8 +245,13 @@ class MakeDataUpdate(IdbUpdate):
         return description
 
     def apply(self):
-        self._undefine_many()
-        if self.data_type in self.TYPE_TO_FUNC.keys():
+        # TODO: Used twice. Throw this in common?
+        ida_bytes.del_items(self.address, ida_bytes.DELIT_SIMPLE, self.data)
+
+        if self.data_type == ida_bytes.FF_STRLIT:
+            self.TYPE_TO_FUNC[self.data_type](self.address, self.data, ida_nalt.STRTYPE_TERMCHR)
+            return True
+        elif self.data_type in self.TYPE_TO_FUNC.keys():
             self.TYPE_TO_FUNC[self.data_type](self.address, self.data)
             return True
         else:
@@ -271,7 +271,7 @@ class MakeDataUpdate(IdbUpdate):
 
         data_undefined = True
         for i in xrange(self.data):
-            ea_flags = ida_bytes.getFlags(self.address + i)
+            ea_flags = ida_bytes.get_full_flags(self.address + i)
             if ea_flags & 0x400:  # Data defined
                 data_undefined = False
         if data_undefined:
@@ -282,8 +282,8 @@ class MakeDataUpdate(IdbUpdate):
         for i in xrange(num_of_elements):
             current_address = self.address + (i * self.TYPE_TO_SIZE[self.data_type])
             current_address = ida_bytes.get_item_head(current_address)
-            ea_flags = ida_bytes.getFlags(current_address)
-            if not ida_bytes.isData(ea_flags):
+            ea_flags = ida_bytes.get_full_flags(current_address)
+            if not ida_bytes.is_data(ea_flags):
                 conflict += 'unknown at 0x%x\n' % current_address
                 continue
             current_data_type = ea_flags & ida_bytes.DT_TYPE
@@ -295,27 +295,118 @@ class MakeDataUpdate(IdbUpdate):
         # TODO: Deal with the case it's just multiple type definitions in the area?
         return ''  # No difference
 
-
     def _get_num_of_elements(self):
         return self.data / self.TYPE_TO_SIZE[self.data_type]
 
     def _has_code(self):
+        """
+        Checks if any address in the changed data area has code in it
+
+        :return: (int) address of the code start, or None.
+        """
         for i in xrange(self.data):
             maybe_start_of_item = ida_bytes.get_item_head(self.address + i)
-            if ida_bytes.isCode(ida_bytes.getFlags(maybe_start_of_item)):
+            if ida_bytes.is_code(ida_bytes.get_full_flags(maybe_start_of_item)):
                 return self.address + i
         return None
 
-    def _undefine_many(self):
-        ida_bytes.do_unknown_range(self.address, self.data, ida_bytes.DOUNK_SIMPLE)
+
+class MakeCodeUpdate(IdbUpdate):
+    # TODO: Used twice, make it global? Or in common?
+    TYPE_TO_NAME = {
+        ida_bytes.FF_BYTE: "Byte",
+        ida_bytes.FF_WORD: "Word",
+        ida_bytes.FF_DWORD: "Dword",
+        ida_bytes.FF_STRLIT: "String Byte"
+    }
+
+    def __init__(self, **kwargs):
+        super(MakeCodeUpdate, self).__init__(**kwargs)
+
+    def __str__(self):
+        description = "%s [0x%x-0x%x]" % (UpdateTypesNames[self.update_type],
+                                          self.address, int(self.address) + self.data)
+        if self.data_at_address:
+            description += "\n(YOURS: %s)" % self.data_at_address
+        return description
+
+    def apply(self):
+        if self.data_at_address:
+            ida_bytes.del_items(self.address, ida_bytes.DELIT_SIMPLE)
+        idc.create_insn(self.address)
+        return True
+
+    def get_conflict(self):
+        """
+
+        :return: None if there's no conflict, empty string if there's no change, data if there's a change.
+        """
+        # TODO: Fill docstring, plus, make the function return 0,1,2 and save the current data by itself.
+        conflicts = ""
+        conflict_flag = False
+        for i in xrange(self.data):
+            current_address = self.address + i
+            head_address = ida_bytes.get_item_head(current_address)
+            if ida_bytes.is_code(ida_bytes.get_full_flags(head_address)):
+                conflict_flag = True
+            ea_flags = ida_bytes.get_full_flags(head_address)
+            if not ida_bytes.is_data(ea_flags):
+                continue
+            conflict_flag = True
+            conflicts += '%s at 0x%x\n' % (self.TYPE_TO_NAME[ea_flags & ida_bytes.DT_TYPE], head_address)
+
+        if conflict_flag:
+            return conflicts
+        return None
+
+
+class MakeFuncUpdate(IdbUpdate):
+    def __init__(self, **kwargs):
+        super(MakeFuncUpdate, self).__init__(**kwargs)
+
+    def apply(self):
+        if self.data_at_address:
+            ida_bytes.del_items(self.address, ida_bytes.DELIT_SIMPLE)
+        idc.add_func(self.address)
+        return True
+
+    def get_conflict(self):
+        """
+
+        :return: None if there's no conflict, empty string if there's no change, data if there's a change.
+        """
+        # TODO: Fill docstring, plus, make the function return 0,1,2 and save the current data by itself.
+        if not idc.get_func_name(self.address):
+            return None
+        return ''
 
 
 class StructCreatedUpdate(IdbUpdate):
-    pass
+    def __init__(self, **kwargs):
+        super(StructCreatedUpdate, self).__init__(**kwargs)
+
+    def apply(self):
+        name = ida_struct.get_struc_name(self.struc_id)
+        print name
+
+        #if self.data_at_address:
+        #    ida_bytes.del_items(self.address, ida_bytes.DELIT_SIMPLE)
+        #idc.add_func(self.address)
+        return True
+
+    def get_conflict(self):
+        """
+
+        :return: None if there's no conflict, empty string if there's no change, data if there's a change.
+        """
+        # TODO: Fill docstring, plus, make the function return 0,1,2 and save the current data by itself.
+        if not idc.get_func_name(self.address):
+            return None
+        return ''
 
 
 class StructRenamedUpdate(IdbUpdate):
-    pass
+    pass  # Not implemented yet
 
 
 class StructMemCreatedUpdate(IdbUpdate):
@@ -337,7 +428,9 @@ TYPE_TO_CLASS = {
     UpdateTypes.StructMemberCreated: StructMemCreatedUpdate,
     UpdateTypes.StructMemberRenamed: StructMemRenamedUpdate,
     UpdateTypes.StructCreated: StructCreatedUpdate,
-    UpdateTypes.MakeData: MakeDataUpdate
+    UpdateTypes.MakeData: MakeDataUpdate,
+    UpdateTypes.MakeCode: MakeCodeUpdate,
+    UpdateTypes.MakeFunc: MakeFuncUpdate
 }
 
 
@@ -351,7 +444,7 @@ def from_json(json_message):
     if 'user' not in message or message['user'] == CONFIGURATION[USER]:
         # don't receive your own updates
         return
-    if 'project' not in message or message['project'] != os.path.basename(idc.GetIdbPath()):
+    if 'project' not in message or message['project'] != idc.GetInputMD5():
         # don't receive updates for other projects
         return
 

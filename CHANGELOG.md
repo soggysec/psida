@@ -1,4 +1,11 @@
-Current version is 0.4.
+Current version is 0.5.
+
+### Version 0.5
+1. Added Structure Support for idb_pickle
+2. Made IDA 7.0 Changes 
+3. Updated README
+4. Removed Windows depencency for the zmq_forwarder.py
+
 
 ### Version 0.4
 1. Code refactoring

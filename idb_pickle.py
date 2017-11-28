@@ -1,10 +1,13 @@
 import cPickle
+import os
 import time
 import psida_common
 import idb_push
 import idc
 import idaapi
 import idautils
+import ida_struct
+import ida_typeinf
 import traceback
 from idaapi import PluginForm
 
@@ -16,6 +19,7 @@ SEGMENT_WARNING = "Segment mismatch - unpickled file has segments:\n%s\n\nwhile 
 NAMES_FIELD = 'NAMES'
 SEGMENTS = 'SEGMENTS'
 COMMENTS_FIELD = 'COMMENTS'
+STRUCTURES_FIELD = 'STRUCTURES'
 
 # UI globals
 g_item_list_model = None
@@ -24,7 +28,7 @@ g_form = None
 
 
 class ItemType(object):
-    Name, Comment, RepeatableComment, AnteriorLines, PosteriorLines = range(5)
+    Name, Comment, RepeatableComment, AnteriorLines, PosteriorLines, Struct = range(6)
 
 
 def format_segments(segments_set):
@@ -143,6 +147,45 @@ def set_anterior_lines(address, lines):
 def set_posterior_lines(address, lines):
     __set_lines(address, idc.ExtLinB, lines)
 
+def get_all_structures():
+    """
+    Returns a dictionary of {address -> (normal comment, repeated comment,
+    anterior lines list, posterior lines list) }.
+    """
+    structures = {}
+
+    for _, sid, name in idautils.Structs():
+        struct = ida_struct.get_struc(sid)
+        struct_def = psida_common.get_struct_def(struct.ordinal)
+        structures[name] = struct_def
+
+    return structures
+
+def set_all_structures(dictionary, overwrite=False, conflicts=None, retry_len=-1):
+    retry = {}
+    for name, new_struct_def in dictionary.iteritems():
+        cur_sid = ida_struct.get_struc_id(name)
+        if cur_sid != idc.BADADDR: # A structure exists with this name
+
+            cur_struct = ida_struct.get_struc(cur_sid)
+            cur_struct_size = ida_struct.get_struc_size(cur_sid)
+
+            cur_struct_def = psida_common.get_struct_def(cur_struct.ordinal)
+
+            if cur_struct_def == new_struct_def: #Skip if they're the same
+                continue
+            else: # Otherwise create a conflict
+                conflicts[name] = (cur_struct.ordinal,cur_struct_size,new_struct_def)
+                continue
+
+        success = psida_common.create_struct(name, new_struct_def)
+        if not success:
+            retry[name] = new_struct_def
+
+    if retry and retry_len != len(retry.keys()):
+        print "Retrying structures: {}".format(retry.keys())
+        set_all_structures(retry,overwrite,conflicts,retry_len=len(retry.keys()))
+
 
 def get_all_comments():
     """
@@ -240,6 +283,13 @@ def pickle(destination_file=None, functions_only=False):
     if destination_file is None:
         destination_file = QtWidgets.QFileDialog.getSaveFileName()[0]
 
+    if destination_file is None:
+        print "User canceled pickling"
+        return False
+
+    destination_file = os.path.abspath(destination_file)
+    print "Saving pickle file to: {}".format(destination_file)
+
     print "Started pickling at %s" % (time.ctime())
     idb_data = {INPUT_FILE_MD5_FIELD: idc.GetInputMD5(),
                 SEGMENTS: psida_common.get_segments(),
@@ -251,12 +301,14 @@ def pickle(destination_file=None, functions_only=False):
     else:
         idb_data[NAMES_FIELD] = get_names()
         idb_data[COMMENTS_FIELD] = get_all_comments()
+        idb_data[STRUCTURES_FIELD] = get_all_structures()
 
     # pickle the data
     with open(destination_file, 'wb') as f:
         cPickle.dump(idb_data, f, 2)
 
     print "Pickling complete at %s" % (time.ctime())
+    print "Pickle File: {}".format(destination_file)
 
 
 class EscapeEater(QtCore.QObject):
@@ -377,6 +429,17 @@ def populate_form_with_items(items):
             else:
                 description = "Name [0x%x]: %s" % (address, new_name)
 
+        elif item_type == ItemType.Struct:
+            new_name = item['name']
+            new_struct_def = item['struct_def']
+            orig_size = item['orig_size']
+            new_struct_size = psida_common.get_struct_size(new_struct_def)
+            if orig_size != new_struct_size:
+                description = "Name [{}] (DANGEROUS Conflict - Size Changed!\n\tNew Size: {}, Old Size: {} ) New Struct:\n {} ".format(new_name, new_struct_size,orig_size, new_struct_def)
+            else:
+                description = "Name [%s]: %s (YOURS: already exists)" % (new_name, new_struct_def)
+
+
         elif item_type == ItemType.Comment:
             new_comment = item['comment']
             current_comment = psida_common.get_comment(address)
@@ -475,6 +538,15 @@ def make_items(idb_data):
                           'lines': posterior_lines
                           })
 
+    for name, conflict in idb_data[STRUCTURES_FIELD].iteritems():
+        items.append({'type': ItemType.Struct,
+                      'name': name,
+                      'ordinal': conflict[0],
+                      'orig_size': conflict[1],
+                      'struct_def': conflict[2],
+                      'address': idc.BADADDR})
+
+
     items.sort(key=lambda x: x['address'])
     return items
 
@@ -553,6 +625,16 @@ def apply_item(row_index):
         elif item_type == ItemType.PosteriorLines:
             lines = item['lines']
             set_posterior_lines(address, lines)
+
+        elif item_type == ItemType.Struct:
+            struct_def = item['struct_def']
+            ordinal = item['ordinal']
+            orig_size = item['orig_size']
+            res = psida_common.create_struct(item['name'], struct_def, ordinal=ordinal, overwrite=True)
+            if not res:
+                print "Failed to apply structure. Error: {}".format(res)
+                should_remove_row = False
+
         else:
             print "WHAAAAAT does type %d mean in update %s?" % (item_type, item)
             should_remove_row = False
@@ -609,14 +691,17 @@ def unpickle(source_file=None,
             # apply non-conflicting updates
             name_conflicts = {}
             comment_conflicts = {}
+            structure_conflicts = {}
 
             set_names(idb_data[NAMES_FIELD], overwrite, name_conflicts)
             set_all_comments(idb_data[COMMENTS_FIELD], overwrite, comment_conflicts)
+            set_all_structures(idb_data[STRUCTURES_FIELD], overwrite, structure_conflicts)
 
             conflicts = {NAMES_FIELD: name_conflicts,
-                         COMMENTS_FIELD: comment_conflicts}
+                         COMMENTS_FIELD: comment_conflicts,
+                         STRUCTURES_FIELD: structure_conflicts}
 
-            if len(name_conflicts) + len(comment_conflicts) == 0:
+            if len(name_conflicts) + len(comment_conflicts) + len(structure_conflicts) == 0:
                 # no conflicts need solving
                 print "Unpickling complete at %s" % (time.ctime())
                 return

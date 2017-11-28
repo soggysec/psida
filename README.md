@@ -1,6 +1,6 @@
 PSIDA
 =========
-### Python Scripts for IDA [by the Argus Research Team]
+### Python Scripts for IDA [Forked from the original version by the Argus Research Team]
 
 PSIDA is a collection of useful Python scripts for IDA.
 At this point, PSIDA focuses on collaborative reverse engineering in two models:
@@ -18,24 +18,24 @@ In order to use PSIDA you need to:
 
 0. Have a 32-bit Python for IDAPython.
 
-1. Make sure the psida directory is in your PYTHONPATH
+1. Place the psida directory is in your PYTHONPATH
 
-2. To use the online feature you also need to:
+2. Move psida/psida_plugin.py to: IDA 7.0/plugins/ 
+
+3. To use the online feature you also need to:
 
     2.1. Create a back-end server and:
 
        - Install zmq (`pip install pyzmq` should do the trick).
 
-       - Install zmq_forwarder as a Windows service; starting it (via services.msc) and setting it as Automatic is probably a good idea.
+       - Run zmq_forwarder on your network, accessible from all clients
 
     2.2. On every local host:
 
        - Install zmq (`pip install pyzmq` should do the trick).
 
-       - Copy psida_plugin.py into your IDA 6.9/plugins/ folder.
 
-
-At this point PSIDA supports only IDA 6.9. It can be made to work on IDA 6.8 (and probably earlier versions), but it's tricky and requires (at least) a recompiled version of the IDAPython plugin that exposes the necessary functions.
+This version of PSIDA focuses on IDA 7.0. 
 
 
 
@@ -43,11 +43,22 @@ Usage
 ------------
 idb_pickle (offline): 
 
- - Call `import psida` in the Python console, and then `psida.idb_pickle.pickle(<>)` to store your progress to a file and `idb_pickle.unpickle(<>)` to load it.
+Creating a pickle file:
+ > from psida import idb_pickle
+ > idb_pickle.pickle('/tmp/output.pickle') #Optionally, you can call (un)pickle without any parameters and it will prompt you for a location
+
+Unpickling on a different IDB:
+ > from psida import idb_pickle
+ > idb_pickle.unpickle('/tmp/output.pickle')
 
 idb_push (online): 
+ - You will first need to make sure that pyzmq has been installed and that zmq_forwarder.py is running:
+ $> pip install pyzmq
+ $> python zmq_forwarder.py
 
+ In IDA:
  - Press Ctrl+Shift+P. The IDB_PUSH window will appear. (At the first run, you will be asked to input your backend hostname or IP address)
+ - NOTE: IPv6 will likely not work
 
 Inside the IDB_PUSH tab you have several shortcuts:
 
@@ -75,7 +86,11 @@ Known Issues
 
 7. Removing comments won't be transmitted.
 
-You can always open an issue at https://bitbucket.org/argussecurity/psida/issues.
+8. Clients not running idb_push when changes are made will not get the updates made by other clients. (There's no persistent storage of changes)
+
+Feel free to submit issues: https://github.com/soggysec/psida/issues
+
+Original Version of PSIDA: https://bitbucket.org/argussecurity/psida
 
 
 Contributing

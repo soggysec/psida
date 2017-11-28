@@ -16,16 +16,17 @@ DEBUG = 'debug'
 ZMQ_CONNECTIVITY_TEST_TIMEOUT_MS = 'connectivity_test_timeout'
 AUTO_APPLY = 'auto_apply'
 
+username = os.getenv('USERNAME') if os.getenv('USERNAME') else os.getenv('USER')
 # filled with reasonable defaults
 CONFIGURATION = {
-    USER: os.getenv('COMPUTERNAME'),
+    USER: username,
     BACKEND_HOSTNAME: '',
     SUB_PORT: 5560,
     PUB_PORT: 5559,
     ZMQ_TIMEOUT_MS: 100,
     ZMQ_CONNECTIVITY_TEST_TIMEOUT_MS: 1000,
     MAX_ITEMS_IN_LIST: 1000,
-    DEBUG: False,
+    DEBUG: True,
     AUTO_APPLY: False
 }
 
@@ -40,8 +41,10 @@ def load_configuration():
 
     with open(CONFIG_FILE_NAME) as f:
         loaded_config = json.load(f)
-    for key in loaded_config:
-        CONFIGURATION[key] = loaded_config[key]
+    for key,val in loaded_config.iteritems():
+        if key == 'user' and val == None:
+            continue
+        CONFIGURATION[key] = val
 
 
 def configure(backend_hostname=None,
@@ -99,6 +102,10 @@ def set_configuration():
         print 'ERROR - Configuration - Couldn\'t load or create the configuration file'
         if CONFIGURATION['debug']:
             traceback.print_exc()
+
+
+def get_configuration():
+    return CONFIGURATION
 
 
 set_configuration()

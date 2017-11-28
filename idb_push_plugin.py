@@ -1,5 +1,6 @@
 import idaapi
 import idc
+import ida_kernwin
 import socket
 from PyQt5 import QtGui, QtCore, QtWidgets
 
@@ -28,6 +29,8 @@ class IdbPushPlugin(idaapi.plugin_t):
 
             return idaapi.PLUGIN_KEEP
         except ImportError:
+            psida = None
+            self.psida_module = psida
             idaapi.msg("Error importing psida module. Make sure it resides in any directory that is in your PYTHONPATH\n")
             return idaapi.PLUGIN_HIDE
 
@@ -53,7 +56,7 @@ class IdbPushPlugin(idaapi.plugin_t):
             if not self.psida_module.idb_push.CONFIGURATION["backend_hostname"]:
                 connected = False
                 while not connected:
-                    backend_hostname = idc.AskStr("Hostname or IP", "Backend not initialized, input your backend's name or IP:")
+                    backend_hostname = ida_kernwin.ask_str("Hostname or IP", 0, "Backend not initialized, input your backend's name or IP:")
                     if not backend_hostname:
                         # User canceled
                         return
@@ -61,6 +64,7 @@ class IdbPushPlugin(idaapi.plugin_t):
                         print backend_hostname
                         self.psida_module.zmq_primitives.configure(backend_hostname=backend_hostname)
                         reload(self.psida_module)
+                        reload(self.psida_module.zmq_primitives)
                         # test connectivity
                         self.psida_module.zmq_primitives.zmq_test_connectivity()
                         connected = True

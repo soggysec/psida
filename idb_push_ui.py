@@ -4,15 +4,17 @@ import idc
 import ida_struct
 import ida_frame
 import ida_bytes
+import ida_lines
+import ida_kernwin
 from idaapi import PluginForm
 from PyQt5 import QtGui, QtCore, QtWidgets
 
 import idb_push_ops
 import hooks
 import psida_common
-import idb_push_config
-reload(idb_push_config)
+
 from idb_push_config import *
+CONFIGURATION = get_configuration()
 
 if CONFIGURATION[DEBUG]:
     reload(idb_push_ops)
@@ -30,6 +32,8 @@ g_item_list_model = None
 g_item_list = None
 # The auto-apply checkbox
 g_auto_apply_checkbox = None
+# List of all make code update
+g_make_code_updates_list = []
 
 
 class IDBPushForm(PluginForm):
@@ -137,6 +141,13 @@ def add_item(update):
             return
     try:
         g_item_list_mutex.lock()
+
+        # handle special case of MakeCode updates
+        if update.update_type == idb_push_ops.UpdateTypes.MakeCode:
+            update = maybe_fix_make_code_update(update)
+            if not update:
+                return
+
         # make sure we don't have the same type of update to the
         # same address - if so, remove the old one!
         new_message_identifier = update.get_identifier()
@@ -185,7 +196,7 @@ def update_form(update):
         current_data = None
 
         if message_type == idb_push_ops.UpdateTypes.Name:
-            current_data = psida_common.get_non_default_name(address)
+            current_data = psida_common.get_non_default_name(address, update.is_local)
             if current_data == update.data:
                 return
 
@@ -199,13 +210,8 @@ def update_form(update):
             if current_data == update.data:
                 return
 
-        elif message_type == idb_push_ops.UpdateTypes.AnteriorLine:
-            current_data = idc.LineA(address, update.line_index)
-            if current_data == update.data:
-                return
-
-        elif message_type == idb_push_ops.UpdateTypes.PosteriorLine:
-            current_data = idc.LineB(address, update.line_index)
+        elif message_type in [idb_push_ops.UpdateTypes.AnteriorLine, idb_push_ops.UpdateTypes.PosteriorLine]:
+            current_data = idc.get_extra_cmt(address, update.line_index)
             if current_data == update.data:
                 return
 
@@ -228,7 +234,8 @@ def update_form(update):
             else:
                 update.new = True
 
-        elif message_type == idb_push_ops.UpdateTypes.MakeData:
+        elif message_type in [idb_push_ops.UpdateTypes.MakeData, idb_push_ops.UpdateTypes.MakeCode,
+                              idb_push_ops.UpdateTypes.MakeFunc]:
             current_data = update.get_conflict()
             if current_data == '':
                 return
@@ -389,9 +396,34 @@ def apply_update(indices):
                 g_identifiers_to_updates.pop(update.get_identifier())
                 removed_rows += 1
 
-        idc.Refresh()
+        ida_kernwin.request_refresh(ida_kernwin.IWID_IDAMEMOS)
     except:
         traceback.print_exc()
 
     finally:
         g_item_list_mutex.unlock()
+
+
+def maybe_fix_make_code_update(update):
+    """
+
+    :param update:
+    :return:
+    """
+
+    # TODO: docstring. Maybe make this something generic for every update that has multiple changes? (Like deletion)
+
+    for i in xrange(len(g_make_code_updates_list)):
+        make_code_update = g_make_code_updates_list[i]
+        if update.address - make_code_update.data == make_code_update.address:
+            update.address = make_code_update.address
+            update.data += make_code_update.data
+            g_make_code_updates_list[i] = update
+            return update
+
+    for make_code_update in g_make_code_updates_list:
+        if (update.address >= make_code_update.address and
+                update.address + update.data <= make_code_update.address + make_code_update.data):
+                return None
+    g_make_code_updates_list.append(update)
+    return update
